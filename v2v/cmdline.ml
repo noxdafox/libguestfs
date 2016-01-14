@@ -331,6 +331,10 @@ read the man page virt-v2v(1).
           error (f_"expecting an OVA file name on the command line") in
       Input_ova.input_ova filename in
 
+  (* Prevent use of --in-place option in RHEL. *)
+  if in_place then
+    error (f_"--in-place cannot be used in RHEL 7");
+
   (* Parse the output mode. *)
   if output_mode <> `Not_set && in_place then
     error (f_"-o and --in-place cannot be used at the same time");
