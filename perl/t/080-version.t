@@ -1,5 +1,5 @@
-# libguestfs Python bindings
-# Copyright (C) 2011-2016 Red Hat Inc.
+# libguestfs Perl bindings -*- perl -*-
+# Copyright (C) 2016 Red Hat Inc.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -15,27 +15,22 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
-import unittest
-import os
-import guestfs
+use strict;
+use warnings;
+use Test::More tests => 5;
 
-close_invoked = 0
+use Sys::Guestfs;
 
-def close_callback (ev, eh, buf, array):
-    global close_invoked
-    close_invoked += 1
+my $g = Sys::Guestfs->new ();
+ok ($g);
 
-class Test410CloseEvent (unittest.TestCase):
-    def test_close_event (self):
-        g = guestfs.GuestFS (python_return_dict=True)
+my %version = $g->version;
+ok (1);
 
-        # Register a callback for the close event.
-        g.set_event_callback (close_callback, guestfs.EVENT_CLOSE)
+is ($version{major}, 1);
+like ($version{minor}, qr/^\d+$/);
+like ($version{release}, qr/^\d+$/);
 
-        # Close the handle.  The close callback should be invoked.
-        self.assertEqual (close_invoked, 0)
-        g.close ()
-        self.assertEqual (close_invoked, 1)
-
-if __name__ == '__main__':
-    unittest.main ()
+# XXX We could try to check that $version{extra} is a string, but perl
+# doesn't have a distinction between string and int, and in any case
+# it's possible (although unusual) for $version{extra} to be an int.
