@@ -59,6 +59,33 @@ do_icat (const mountable_t *mountable, int64_t inode)
   return file_out (cmd);
 }
 
+int
+do_blkcat (const mountable_t *mountable, int64_t start, int64_t number)
+{
+  CLEANUP_FREE char *cmd = NULL;
+
+  /* Data unit address start must be greater than 0 */
+  if (start < 0) {
+    reply_with_error ("data unit starting address must be >= 0");
+    return -1;
+  }
+
+  /* Data unit number must be greater than 1 */
+  if (number < 1) {
+    reply_with_error ("data unit number must be >= 1");
+    return -1;
+  }
+
+  /* Construct the command. */
+  if (asprintf (&cmd, "blkcat %s %" PRIi64 " %" PRIi64,
+                mountable->device, start, number) == -1) {
+    reply_with_perror ("asprintf");
+    return -1;
+  }
+
+  return file_out (cmd);
+}
+
 static int
 file_out (const char *cmd)
 {

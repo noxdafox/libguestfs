@@ -12958,6 +12958,24 @@ and save it as F<filename> on the local machine.
 
 This allows to download deleted or inaccessible files." };
 
+  { defaults with
+    name = "blkcat"; added = (1, 33, 14);
+    style = RErr, [Mountable "device"; Int64 "start"; Int64 "number"; FileOut "filename"], [];
+    proc_nr = Some 465;
+    optional = Some "sleuthkit";
+    progress = true; cancellable = true;
+    shortdesc = "download the device data units to the local machine";
+    longdesc = "\
+Download F<number> amount of data units starting from F<start>
+from the disk partition (eg. F</dev/sda1>)
+and save them as F<filename> on the local machine.
+
+The size of a data unit varies across filesystem implementations.
+On NTFS filesystems data units are referred as clusters
+while on ExtX ones they are referred as fragments.
+
+This command allows to download unallocated sectors of the disk." };
+
 ]
 
 (* Non-API meta-commands available only in guestfish.
