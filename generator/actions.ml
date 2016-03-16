@@ -12976,6 +12976,25 @@ while on ExtX ones they are referred as fragments.
 
 This command allows to download unallocated sectors of the disk." };
 
+  { defaults with
+    name = "blkls"; added = (1, 33, 14);
+    style = RErr, [Mountable "device"; Int64 "start"; Int64 "stop"; FileOut "filename"], [];
+    proc_nr = Some 466;
+    optional = Some "sleuthkit";
+    progress = true; cancellable = true;
+    shortdesc = "download the unallocated data units from the disk";
+    longdesc = "\
+Download the unallocated data units from F<start> address
+to F<end> from the disk partition (eg. F</dev/sda1>)
+and save them as F<filename> on the local machine.
+
+The use of this API on sparse disk image formats might results
+in long zero-filled strings downloaded on the host.
+
+The size of a data unit varies across filesystem implementations.
+On NTFS filesystems data units are referred as clusters
+while on ExtX ones they are referred as fragments." };
+
 ]
 
 (* Non-API meta-commands available only in guestfish.
