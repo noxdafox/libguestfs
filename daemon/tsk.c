@@ -30,6 +30,7 @@
 #include "optgroups.h"
 
 static int file_out (const char *cmd);
+static guestfs_int_tsknode* parse_ffind (const char *out, int64_t inode);
 
 GUESTFSD_EXT_CMD(str_sleuthkit_probe, icat);
 
@@ -57,6 +58,119 @@ do_icat (const mountable_t *mountable, int64_t inode)
   }
 
   return file_out (cmd);
+}
+
+int
+do_blkcat (const mountable_t *mountable, int64_t start, int64_t number)
+{
+  CLEANUP_FREE char *cmd = NULL;
+
+  /* Data unit address start must be greater than 0 */
+  if (start < 0) {
+    reply_with_error ("data unit starting address must be >= 0");
+    return -1;
+  }
+
+  /* Data unit number must be greater than 1 */
+  if (number < 1) {
+    reply_with_error ("data unit number must be >= 1");
+    return -1;
+  }
+
+  /* Construct the command. */
+  if (asprintf (&cmd, "blkcat %s %" PRIi64 " %" PRIi64,
+                mountable->device, start, number) == -1) {
+    reply_with_perror ("asprintf");
+    return -1;
+  }
+
+  return file_out (cmd);
+}
+
+int
+do_blkls (const mountable_t *mountable, int64_t start, int64_t stop)
+{
+  CLEANUP_FREE char *cmd = NULL;
+
+  /* Data unit address start must be greater than 0 */
+  if (start < 0) {
+    reply_with_error ("data unit starting address must be >= 0");
+    return -1;
+  }
+
+  /* Data unit address end must be greater than start */
+  if (stop <= start) {
+    reply_with_error ("data unit stopping address must be > starting one");
+    return -1;
+  }
+
+  /* Construct the command. */
+  if (asprintf (&cmd, "blkls %s %" PRIi64 "-%" PRIi64,
+                mountable->device, start, stop) == -1) {
+    reply_with_perror ("asprintf");
+    return -1;
+  }
+
+  return file_out (cmd);
+}
+
+guestfs_int_tsknode*
+do_ffind (const mountable_t *mountable, int64_t inode)
+{
+  int r;
+  char buf[32];
+  CLEANUP_FREE char *out = NULL, *err = NULL;
+
+  /* Inode must be greater than 0 */
+  if (inode < 0) {
+    reply_with_error ("inode must be >= 0");
+    return NULL;
+  }
+
+  snprintf (buf, sizeof buf, "%" PRIi64, inode);
+
+  r = command (&out, &err, "ffind", mountable->device, buf, NULL);
+  if (r == -1) {
+    reply_with_error ("%s", err);
+    return NULL;
+  }
+
+  return parse_ffind(out, inode);
+}
+
+static guestfs_int_tsknode*
+parse_ffind (const char *out, int64_t inode)
+{
+  size_t len;
+  guestfs_int_tsknode *ret;
+
+  ret = calloc (1, sizeof *ret);
+  if (ret == NULL) {
+    reply_with_perror ("calloc");
+    return NULL;
+  }
+
+  len = strlen(out) - 1;
+  ret->tsk_inode = inode;
+
+  if STRPREFIX (out, "File name not found for inode") {
+    reply_with_error ("%ld Inode not in use", inode);
+    return NULL;
+  }
+  else if STRPREFIX (out, "* ") {
+    ret->tsk_allocated = 0;
+    ret->tsk_name = strndup (&out[2], len - 2);
+  }
+  else if STRPREFIX (out, "//") {
+    ret->tsk_allocated = 1;
+    ret->tsk_name = strndup (&out[1], len - 1);
+  }
+  else {
+    ret->tsk_allocated = 1;
+    ret->tsk_name = strndup (out, len);
+  }
+
+  return ret;
 }
 
 static int
