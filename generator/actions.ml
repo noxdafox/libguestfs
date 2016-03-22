@@ -12995,6 +12995,26 @@ The size of a data unit varies across filesystem implementations.
 On NTFS filesystems data units are referred as clusters
 while on ExtX ones they are referred as fragments." };
 
+  { defaults with
+    name = "find_inode"; added = (1, 33, 14);
+    style = RStruct ("nodeinfo", "tsk_node"), [Mountable "device"; Int64 "inode";], [];
+    proc_nr = Some 467;
+    optional = Some "sleuthkit";
+    progress = true; cancellable = true;
+    tests = [
+      InitBasicFS, Always, TestResult (
+        [["find_inode"; "/dev/sdb1"; "2"]],
+        "STREQ (ret->tsk_name, \"/\") && "^
+        "ret->tsk_inode == 2 && "^
+        "ret->tsk_allocated == 1"), []
+    ];
+    shortdesc = "find the name of the file referenced by its inode";
+    longdesc = "\
+Resolves the name of a file or directory in a disk partition (eg. F</dev/sda1>)
+given its inode.
+
+On some filesystem, it can find deleted files." };
+
 ]
 
 (* Non-API meta-commands available only in guestfish.

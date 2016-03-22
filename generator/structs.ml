@@ -442,8 +442,18 @@ let structs = [
     "im_device", FString;
     "im_volume", FString;
     ];
-    s_camel_name = "InternalMountable";
-  };
+    s_camel_name = "InternalMountable" };
+
+  (* The Sleuth Kit node info struct. *)
+  { defaults with
+    s_name = "tsk_node";
+    s_cols = [
+    "tsk_name", FString;
+    "tsk_inode", FUInt64;
+    "tsk_allocated", FUInt32;
+    ];
+    s_camel_name = "TSKNode" };
+
 ] (* end of structs *)
 
 let lookup_struct name =
