@@ -3546,6 +3546,19 @@ The environment variable C<XDG_RUNTIME_DIR> controls the default
 value: If C<XDG_RUNTIME_DIR> is set, then that is the default.
 Else F</tmp> is the default." };
 
+  { defaults with
+    name = "filesystem_walk"; added = (1, 33, 16);
+    style = RStructList ("nodeinfos", "tsk_node"), [Mountable "device";], [];
+    optional = Some "libtsk";
+    progress = true; cancellable = true;
+    shortdesc = "walk through the filesystem content";
+    longdesc = "\
+Walk through the internal structures of a disk partition (eg. F</dev/sda1>)
+in order to return a list of all the files and directories stored within.
+
+For each file or directory found, the function reports its path, its inode and whether
+it is allocated or not." };
+
 ]
 
 (* daemon_functions are any functions which cause some action
