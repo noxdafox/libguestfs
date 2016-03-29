@@ -20,7 +20,8 @@ include $(top_srcdir)/subdir-rules.mk
 TESTS = \
 	test-icat.sh \
 	test-blkcat.sh \
-	test-blkls.sh
+	test-blkls.sh \
+	test-filesystem-walk0.sh
 
 TESTS_ENVIRONMENT = $(top_builddir)/run --test
 
