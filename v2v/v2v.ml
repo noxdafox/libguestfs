@@ -82,7 +82,17 @@ let rec main () =
   );
 
   let keep_serial_console = output#keep_serial_console in
-  let guestcaps = do_convert g inspect source keep_serial_console in
+  let rcaps =
+    match conversion_mode with
+    | Copying _ ->
+        {
+          rcaps_block_bus = None;
+          rcaps_net_bus = None;
+          rcaps_video = None;
+        }
+    | In_place ->
+        rcaps_from_source source in
+  let guestcaps = do_convert g inspect source keep_serial_console rcaps in
 
   g#umount_all ();
 
@@ -699,7 +709,7 @@ and check_target_free_space mpstats source targets output =
 
   output#check_target_free_space source targets
 
-and do_convert g inspect source keep_serial_console =
+and do_convert g inspect source keep_serial_console rcaps =
   (* Conversion. *)
   (match inspect.i_product_name with
   | "unknown" ->
@@ -714,7 +724,9 @@ and do_convert g inspect source keep_serial_console =
       error (f_"virt-v2v is unable to convert this guest type (%s/%s)")
         inspect.i_type inspect.i_distro in
   if verbose () then printf "picked conversion module %s\n%!" conversion_name;
-  let guestcaps = convert ~keep_serial_console g inspect source in
+  if verbose () then printf "requested caps: %s%!"
+    (string_of_requested_guestcaps rcaps);
+  let guestcaps = convert ~keep_serial_console g inspect source rcaps in
   if verbose () then printf "%s%!" (string_of_guestcaps guestcaps);
 
   (* Did we manage to install virtio drivers? *)
@@ -966,5 +978,53 @@ and preserve_overlays overlays src_name =
       rename ov.ov_overlay_file saved_filename;
       printf (f_"Overlay saved as %s [--debug-overlays]\n") saved_filename
   ) overlays
+
+and rcaps_from_source source =
+  (* Request guest caps based on source configuration. *)
+
+  let source_block_types =
+    List.map (fun sd -> sd.s_controller) source.s_disks in
+  let source_block_type =
+    match sort_uniq source_block_types with
+    | [] -> error (f_"source has no hard disks!")
+    | [t] -> t
+    | _ -> error (f_"source has multiple hard disk types!") in
+  let block_type =
+    match source_block_type with
+    | Some Source_virtio_blk -> Some Virtio_blk
+    | Some Source_IDE -> Some IDE
+    | Some t -> error (f_"source has unsupported hard disk type '%s'")
+                      (string_of_controller t)
+    | None -> error (f_"source has unrecognized hard disk type") in
+
+  let source_net_types =
+      List.map (fun nic -> nic.s_nic_model) source.s_nics in
+  let source_net_type =
+    match sort_uniq source_net_types with
+    | [] -> None
+    | [t] -> t
+    | _ -> error (f_"source has multiple network adapter model!") in
+  let net_type =
+    match source_net_type with
+    | Some Source_virtio_net -> Some Virtio_net
+    | Some Source_e1000 -> Some E1000
+    | Some Source_rtl8139 -> Some RTL8139
+    | Some t -> error (f_"source has unsupported network adapter model '%s'")
+                      (string_of_nic_model t)
+    | None -> None in
+
+  let video =
+    match source.s_video with
+    | Some Source_QXL -> Some QXL
+    | Some Source_Cirrus -> Some Cirrus
+    | Some t -> error (f_"source has unsupported video adapter model '%s'")
+                      (string_of_source_video t)
+    | None -> None in
+
+  {
+    rcaps_block_bus = block_type;
+    rcaps_net_bus = net_type;
+    rcaps_video = video;
+  }
 
 let () = run_main_and_handle_errors main

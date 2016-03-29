@@ -30,21 +30,19 @@ TESTS_ENVIRONMENT = $(top_builddir)/run --test
 
 EXTRA_DIST = \
 	$(TESTS) \
-	guestfs-md5.sh \
 	qemu-boot.c \
 	qemu-speed-test.c
 
-# qemu-boot & qemu-speed-test are built but not run by default as they
-# are mainly qemu & kernel diagnostic tools.
+# qemu-boot, qemu-speed-test and boot-analysis are built but not run
+# by default as they are mainly qemu & kernel diagnostic tools.
 
-check_PROGRAMS = qemu-boot qemu-speed-test
+check_PROGRAMS = qemu-boot qemu-speed-test boot-analysis
 
 qemu_boot_SOURCES = \
 	../../df/estimate-max-threads.c \
 	../../df/estimate-max-threads.h \
 	qemu-boot.c
 qemu_boot_CPPFLAGS = \
-	-DGUESTFS_PRIVATE=1 \
 	-I$(top_srcdir)/gnulib/lib -I$(top_builddir)/gnulib/lib \
 	-I$(top_srcdir)/src -I$(top_builddir)/src \
 	-I$(top_srcdir)/df
@@ -62,7 +60,6 @@ qemu_boot_LDADD = \
 qemu_speed_test_SOURCES = \
 	qemu-speed-test.c
 qemu_speed_test_CPPFLAGS = \
-	-DGUESTFS_PRIVATE=1 \
 	-I$(top_srcdir)/gnulib/lib -I$(top_builddir)/gnulib/lib \
 	-I$(top_srcdir)/src -I$(top_builddir)/src \
 	-I$(top_srcdir)/df
@@ -75,6 +72,26 @@ qemu_speed_test_LDADD = \
 	$(LIBVIRT_LIBS) \
 	$(LTLIBINTL) \
 	$(top_builddir)/gnulib/lib/libgnu.la
+
+boot_analysis_SOURCES = \
+	boot-analysis.c \
+	boot-analysis.h \
+	boot-analysis-timeline.c
+boot_analysis_CPPFLAGS = \
+	-I$(top_srcdir)/gnulib/lib -I$(top_builddir)/gnulib/lib \
+	-I$(top_srcdir)/src -I$(top_builddir)/src
+boot_analysis_CFLAGS = \
+	$(WARN_CFLAGS) $(WERROR_CFLAGS) \
+	$(PCRE_CFLAGS)
+boot_analysis_LDADD = \
+	$(top_builddir)/src/libutils.la \
+	$(top_builddir)/src/libguestfs.la \
+	$(PCRE_LIBS) \
+	$(LIBXML2_LIBS) \
+	$(LIBVIRT_LIBS) \
+	$(LTLIBINTL) \
+	$(top_builddir)/gnulib/lib/libgnu.la \
+	-lm
 
 # Don't run these tests in parallel, since they are designed to check
 # the integrity of qemu.

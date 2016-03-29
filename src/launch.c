@@ -119,31 +119,6 @@ guestfs_int_launch_send_progress (guestfs_h *g, int perdozen)
   }
 }
 
-/* Note that since this calls 'debug' it should only be called
- * from the parent process.
- */
-void
-guestfs_int_print_timestamped_message (guestfs_h *g, const char *fs, ...)
-{
-  va_list args;
-  char *msg;
-  int err;
-  struct timeval tv;
-
-  va_start (args, fs);
-  err = vasprintf (&msg, fs, args);
-  va_end (args);
-
-  if (err < 0) return;
-
-  gettimeofday (&tv, NULL);
-
-  debug (g, "[%05" PRIi64 "ms] %s",
-         guestfs_int_timeval_diff (&g->launch_t, &tv), msg);
-
-  free (msg);
-}
-
 /* Compute Y - X and return the result in milliseconds.
  * Approximately the same as this code:
  * http://www.mpp.mpg.de/~huber/util/timevaldiff.c
@@ -303,6 +278,12 @@ guestfs_impl_config (guestfs_h *g,
 #define SERIAL_CONSOLE "console=ttyS0"
 #endif
 
+#if defined(__aarch64__)
+#define EARLYPRINTK " earlyprintk=pl011,0x9000000"
+#else
+#define EARLYPRINTK ""
+#endif
+
 char *
 guestfs_int_appliance_command_line (guestfs_h *g, const char *appliance_dev,
 				    int flags)
@@ -331,9 +312,10 @@ guestfs_int_appliance_command_line (guestfs_h *g, const char *appliance_dev,
 #ifdef __i386__
      " noapic"                  /* workaround for RHBZ#857026 */
 #endif
-     " " SERIAL_CONSOLE /* serial console */
+     " " SERIAL_CONSOLE         /* serial console */
+     EARLYPRINTK                /* get messages from early boot */
 #ifdef __aarch64__
-     " earlyprintk=pl011,0x9000000 ignore_loglevel"
+     " ignore_loglevel"
      /* This option turns off the EFI RTC device.  QEMU VMs don't
       * currently provide EFI, and if the device is compiled in it
       * will try to call the EFI function GetTime unconditionally

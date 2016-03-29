@@ -54,7 +54,6 @@ struct backend_direct_data {
   pid_t recoverypid;          /* Recovery process PID. */
 
   char *qemu_help;            /* Output of qemu -help. */
-  char *qemu_version;         /* Output of qemu -version. */
   char *qemu_devices;         /* Output of qemu -device ? */
 
   /* qemu version (0, 0 if unable to parse). */
@@ -285,8 +284,7 @@ launch_direct (guestfs_h *g, void *datav, const char *arg)
 
   guestfs_int_launch_send_progress (g, 3);
 
-  if (g->verbose)
-    guestfs_int_print_timestamped_message (g, "begin testing qemu features");
+  debug (g, "begin testing qemu features");
 
   /* Get qemu help text and version. */
   if (qemu_supports (g, data, NULL) == -1)
@@ -327,8 +325,7 @@ launch_direct (guestfs_h *g, void *datav, const char *arg)
     }
   }
 
-  if (g->verbose)
-    guestfs_int_print_timestamped_message (g, "finished testing qemu features");
+  debug (g, "finished testing qemu features");
 
   /* Construct the qemu command line.  We have to do this before
    * forking, because after fork we are not allowed to use
@@ -454,6 +451,17 @@ launch_direct (guestfs_h *g, void *datav, const char *arg)
   ADD_CMDLINE ("-initrd");
   ADD_CMDLINE (initrd);
 
+  /* Add a random number generator (backend for virtio-rng).  This
+   * isn't strictly necessary but means we won't need to hang around
+   * when needing entropy.
+   */
+  if (qemu_supports_device (g, data, "virtio-rng-pci")) {
+    ADD_CMDLINE ("-object");
+    ADD_CMDLINE ("rng-random,filename=/dev/urandom,id=rng0");
+    ADD_CMDLINE ("-device");
+    ADD_CMDLINE ("virtio-rng-pci,rng=rng0");
+  }
+
   /* Add drives */
   virtio_scsi = qemu_supports_virtio_scsi (g, data);
 
@@ -574,19 +582,9 @@ launch_direct (guestfs_h *g, void *datav, const char *arg)
   ADD_CMDLINE ("-device");
   ADD_CMDLINE (VIRTIO_SERIAL);
 
-#if 0
-  /* Use virtio-console (a variant form of virtio-serial) for the
-   * guest's serial console.
-   */
-  ADD_CMDLINE ("-chardev");
-  ADD_CMDLINE ("stdio,id=console");
-  ADD_CMDLINE ("-device");
-  ADD_CMDLINE ("virtconsole,chardev=console,name=org.libguestfs.console.0");
-#else
-  /* When the above works ...  until then: */
+  /* Create the serial console. */
   ADD_CMDLINE ("-serial");
   ADD_CMDLINE ("stdio");
-#endif
 
   if (qemu_supports_device (g, data, "Serial Graphics Adapter")) {
     /* Use sgabios instead of vgabios.  This means we'll see BIOS
@@ -825,8 +823,7 @@ launch_direct (guestfs_h *g, void *datav, const char *arg)
     goto cleanup1;
   }
 
-  if (g->verbose)
-    guestfs_int_print_timestamped_message (g, "appliance is up");
+  debug (g, "appliance is up");
 
   /* This is possible in some really strange situations, such as
    * guestfsd starts up OK but then qemu immediately exits.  Check for
@@ -941,22 +938,18 @@ print_qemu_command_line (guestfs_h *g, char **argv)
 static void parse_qemu_version (guestfs_h *g, struct backend_direct_data *data);
 static void read_all (guestfs_h *g, void *retv, const char *buf, size_t len);
 
-/* Test qemu binary (or wrapper) runs, and do 'qemu -help' and
- * 'qemu -version' so we know what options this qemu supports and
- * the version.
+/* Test qemu binary (or wrapper) runs, and do 'qemu -help' so we know
+ * the version of qemu what options this qemu supports.
  */
 static int
 test_qemu (guestfs_h *g, struct backend_direct_data *data)
 {
   CLEANUP_CMD_CLOSE struct command *cmd1 = guestfs_int_new_command (g);
   CLEANUP_CMD_CLOSE struct command *cmd2 = guestfs_int_new_command (g);
-  CLEANUP_CMD_CLOSE struct command *cmd3 = guestfs_int_new_command (g);
   int r;
 
   free (data->qemu_help);
   data->qemu_help = NULL;
-  free (data->qemu_version);
-  data->qemu_version = NULL;
   free (data->qemu_devices);
   data->qemu_devices = NULL;
 
@@ -970,34 +963,24 @@ test_qemu (guestfs_h *g, struct backend_direct_data *data)
   if (r == -1 || !WIFEXITED (r) || WEXITSTATUS (r) != 0)
     goto error;
 
+  parse_qemu_version (g, data);
+
   guestfs_int_cmd_add_arg (cmd2, g->hv);
   guestfs_int_cmd_add_arg (cmd2, "-display");
   guestfs_int_cmd_add_arg (cmd2, "none");
-  guestfs_int_cmd_add_arg (cmd2, "-version");
-  guestfs_int_cmd_set_stdout_callback (cmd2, read_all, &data->qemu_version,
-				       CMD_STDOUT_FLAG_WHOLE_BUFFER);
-  r = guestfs_int_cmd_run (cmd2);
-  if (r == -1 || !WIFEXITED (r) || WEXITSTATUS (r) != 0)
-    goto error;
-
-  parse_qemu_version (g, data);
-
-  guestfs_int_cmd_add_arg (cmd3, g->hv);
-  guestfs_int_cmd_add_arg (cmd3, "-display");
-  guestfs_int_cmd_add_arg (cmd3, "none");
-  guestfs_int_cmd_add_arg (cmd3, "-machine");
-  guestfs_int_cmd_add_arg (cmd3,
+  guestfs_int_cmd_add_arg (cmd2, "-machine");
+  guestfs_int_cmd_add_arg (cmd2,
 #ifdef MACHINE_TYPE
                            MACHINE_TYPE ","
 #endif
                            "accel=kvm:tcg");
-  guestfs_int_cmd_add_arg (cmd3, "-device");
-  guestfs_int_cmd_add_arg (cmd3, "?");
-  guestfs_int_cmd_clear_capture_errors (cmd3);
-  guestfs_int_cmd_set_stderr_to_stdout (cmd3);
-  guestfs_int_cmd_set_stdout_callback (cmd3, read_all, &data->qemu_devices,
+  guestfs_int_cmd_add_arg (cmd2, "-device");
+  guestfs_int_cmd_add_arg (cmd2, "?");
+  guestfs_int_cmd_clear_capture_errors (cmd2);
+  guestfs_int_cmd_set_stderr_to_stdout (cmd2);
+  guestfs_int_cmd_set_stdout_callback (cmd2, read_all, &data->qemu_devices,
 				       CMD_STDOUT_FLAG_WHOLE_BUFFER);
-  r = guestfs_int_cmd_run (cmd3);
+  r = guestfs_int_cmd_run (cmd2);
   if (r == -1 || !WIFEXITED (r) || WEXITSTATUS (r) != 0)
     goto error;
 
@@ -1011,8 +994,9 @@ test_qemu (guestfs_h *g, struct backend_direct_data *data)
   return -1;
 }
 
-/* Parse data->qemu_version (if not NULL) into the major and minor
- * version of qemu, but don't fail if parsing is not possible.
+/* Parse the first line of data->qemu_help (if not NULL) into the
+ * major and minor version of qemu, but don't fail if parsing is not
+ * possible.
  */
 static void
 parse_qemu_version (guestfs_h *g, struct backend_direct_data *data)
@@ -1023,13 +1007,13 @@ parse_qemu_version (guestfs_h *g, struct backend_direct_data *data)
   data->qemu_version_major = 0;
   data->qemu_version_minor = 0;
 
-  if (!data->qemu_version)
+  if (!data->qemu_help)
     return;
 
-  if (!match2 (g, data->qemu_version, re_major_minor, &major_s, &minor_s)) {
+  if (!match2 (g, data->qemu_help, re_major_minor, &major_s, &minor_s)) {
   parse_failed:
-    debug (g, "%s: failed to parse qemu version string '%s'",
-           __func__, data->qemu_version);
+    debug (g, "%s: failed to parse qemu version string from the first line of the output of '%s -help'.  When reporting this bug please include the -help output.",
+           __func__, g->hv);
     return;
   }
 
@@ -1518,8 +1502,6 @@ shutdown_direct (guestfs_h *g, void *datav, int check_for_errors)
 
   free (data->qemu_help);
   data->qemu_help = NULL;
-  free (data->qemu_version);
-  data->qemu_version = NULL;
   free (data->qemu_devices);
   data->qemu_devices = NULL;
 

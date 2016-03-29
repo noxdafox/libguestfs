@@ -29,6 +29,7 @@ type source = {
   s_features : string list;             (** Machine features. *)
   s_firmware : source_firmware;         (** Firmware (BIOS or EFI). *)
   s_display : source_display option;    (** Guest display. *)
+  s_video : source_video option;        (** Video adapter. *)
   s_sound : source_sound option;        (** Sound card. *)
   s_disks : source_disk list;           (** Disk images. *)
   s_removables : source_removable list; (** CDROMs etc. *)
@@ -82,10 +83,14 @@ and s_removable_type = CDROM | Floppy
 
 and source_nic = {
   s_mac : string option;                (** MAC address. *)
+  s_nic_model : s_nic_model option;     (** Network adapter model. *)
   s_vnet : string;                      (** Source network name. *)
   s_vnet_orig : string;                 (** Original network (if we map it). *)
   s_vnet_type : vnet_type;              (** Source network type. *)
 }
+(** Network adapter models. *)
+and s_nic_model = Source_other_nic of string |
+                  Source_rtl8139 | Source_e1000 | Source_virtio_net
 (** Network interfaces. *)
 and vnet_type = Bridge | Network
 
@@ -103,6 +108,10 @@ and s_display_listen =
   | LAddress of string             (** Listen address. *)
   | LNetwork of string             (** Listen network. *)
 
+(** Video adapter model. *)
+and source_video = Source_other_video of string |
+                   Source_Cirrus | Source_QXL
+
 and source_sound = {
   s_sound_model : source_sound_model; (** Sound model. *)
 }
@@ -111,8 +120,10 @@ and source_sound_model =
 
 val string_of_source : source -> string
 val string_of_source_disk : source_disk -> string
-
+val string_of_controller : s_controller -> string
+val string_of_nic_model : s_nic_model -> string
 val string_of_source_sound_model : source_sound_model -> string
+val string_of_source_video : source_video -> string
 
 val string_of_source_hypervisor : source_hypervisor -> string
 val source_hypervisor_of_string : string -> source_hypervisor
@@ -198,6 +209,13 @@ type guestcaps = {
   gcaps_arch : string;      (** Architecture that KVM must emulate. *)
   gcaps_acpi : bool;        (** True if guest supports acpi. *)
 }
+and requested_guestcaps = {
+  rcaps_block_bus : guestcaps_block_type option;
+  rcaps_net_bus : guestcaps_net_type option;
+  rcaps_video : guestcaps_video_type option;
+  (** Requested guest capabilities, to allow the caller to affect converter
+      choices *)
+}
 (** Guest capabilities after conversion.  eg. Was virtio found or installed? *)
 
 and guestcaps_block_type = Virtio_blk | IDE
@@ -205,6 +223,7 @@ and guestcaps_net_type = Virtio_net | E1000 | RTL8139
 and guestcaps_video_type = QXL | Cirrus
 
 val string_of_guestcaps : guestcaps -> string
+val string_of_requested_guestcaps : requested_guestcaps -> string
 
 type target_buses = {
   target_virtio_blk_bus : target_bus_slot array;
