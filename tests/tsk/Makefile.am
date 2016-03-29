@@ -21,7 +21,8 @@ TESTS = \
 	test-icat.sh \
 	test-blkcat.sh \
 	test-blkls.sh \
-	test-filesystem-walk0.sh
+	test-filesystem-walk0.sh \
+	test-filesystem-walk.sh
 
 TESTS_ENVIRONMENT = $(top_builddir)/run --test
 
