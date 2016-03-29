@@ -29,6 +29,26 @@
 #include "actions.h"
 #include "optgroups.h"
 
+#ifdef HAVE_LIBTSK
+
+#include <tsk/libtsk.h>
+#include <rpc/xdr.h>
+#include <rpc/types.h>
+
+static int
+open_filesystem(const char *device, TSK_IMG_INFO **img, TSK_FS_INFO **fs);
+static TSK_WALK_RET_ENUM
+fswalk_callback(TSK_FS_FILE *fsfile, const char *path, void *data);
+static char *join_path(const char *path, const char *name);
+static int inode_out(guestfs_int_tsk_node *node_info);
+static void reply_with_tsk_error(void);
+
+#else
+
+OPTGROUP_LIBTSK_NOT_AVAILABLE
+
+#endif
+
 static int file_out (const char *cmd);
 static guestfs_int_tsk_node* parse_ffind (const char *out, int64_t inode);
 
@@ -226,3 +246,169 @@ file_out (const char *cmd)
 
   return 0;
 }
+
+#ifdef HAVE_LIBTSK
+
+
+int optgroup_libtsk_available(void)
+{
+  return 1;
+}
+
+int do_filesystem_walk0(const mountable_t *mountable)
+{
+  int ret = 0;
+  TSK_FS_INFO *fs = NULL;
+  TSK_IMG_INFO *img = NULL;
+  int flags = TSK_FS_DIR_WALK_FLAG_ALLOC | TSK_FS_DIR_WALK_FLAG_UNALLOC |
+    TSK_FS_DIR_WALK_FLAG_RECURSE | TSK_FS_DIR_WALK_FLAG_NOORPHAN;
+
+  if (open_filesystem(mountable->device, &img, &fs) < 0)
+    return -1;
+
+  reply(NULL, NULL);  /* Reply message. */
+
+  if (tsk_fs_dir_walk(fs, fs->root_inum, flags, fswalk_callback, &ret) != 0) {
+    send_file_end(1);	/* Cancel file transfer. */
+    reply_with_tsk_error();
+
+    ret = -1;
+  }
+  else {
+    if (send_file_end(0))  /* Normal end of file. */
+      ret = -1;
+
+    ret = 0;
+  }
+
+  fs->close(fs);
+  img->close(img);
+
+  return ret;
+}
+
+/* Inspect the device and initialises the img and fs structures.
+ * Return 0 on success, -1 on error.
+ */
+static int
+open_filesystem(const char *device, TSK_IMG_INFO **img, TSK_FS_INFO **fs)
+{
+  const char *images[] = { device };
+
+  if ((*img = tsk_img_open(1, images, TSK_IMG_TYPE_DETECT , 0)) == NULL) {
+    reply_with_tsk_error();
+
+    return -1;
+  }
+
+  if ((*fs = tsk_fs_open_img(*img, 0, TSK_FS_TYPE_DETECT)) == NULL) {
+    reply_with_tsk_error();
+
+    (*img)->close(*img);
+
+    return -1;
+  }
+
+  return 0;
+}
+
+/* Filesystem walk callback, it gets called on every FS node.
+ * Parse the node, encode it into an XDR structure and send it to the appliance.
+ * Return 0 on success, -1 on error.
+ */
+static TSK_WALK_RET_ENUM
+fswalk_callback(TSK_FS_FILE *fsfile, const char *path, void *data)
+{
+  CLEANUP_FREE char *file_name = NULL;
+  struct guestfs_int_tsk_node node_info;
+
+  /* Ignore ./ and ../ */
+  if (TSK_FS_ISDOT(fsfile->name->name))
+    return 0;
+
+  if ((file_name = join_path(path, fsfile->name->name)) == NULL)
+    return -1;
+
+  node_info.tsk_name = file_name;
+  node_info.tsk_inode = fsfile->name->meta_addr;
+  if (fsfile->name->flags & TSK_FS_NAME_FLAG_UNALLOC)
+    node_info.tsk_allocated = 0;
+  else
+    node_info.tsk_allocated = 1;
+
+  return inode_out(&node_info);
+}
+
+/* Joins the file name and file path.
+ * Return the joined path on success, NULL on failure.
+ */
+static char *join_path(const char *path, const char *name)
+{
+  char *buf;
+  size_t len;
+
+  path = (path != NULL) ? path : "";
+  len = strlen(path) + strlen(name) + 1;
+
+  if (!(buf = malloc(len))) {
+    reply_with_perror("malloc");
+    return NULL;
+  }
+
+  snprintf(buf, len, "%s%s", path, name);
+
+  return buf;
+}
+
+/* Serialise node_info into XDR stream and send it to the appliance.
+ * Return 0 on success, -1 on error.
+ */
+static int inode_out(guestfs_int_tsk_node *node_info)
+{
+  XDR xdr;
+  size_t len;
+  CLEANUP_FREE char *buf;
+
+  if ((buf = malloc(GUESTFS_MAX_CHUNK_SIZE)) == NULL) {
+    reply_with_perror ("malloc");
+    return -1;
+  }
+
+  /* Serialise tsk_node struct. */
+  len = strlen(node_info->tsk_name) + 1;
+
+  xdrmem_create(&xdr, buf, GUESTFS_MAX_CHUNK_SIZE, XDR_ENCODE);
+  if (!xdr_u_long(&xdr, &len))
+    return -1;
+  if (!xdr_string(&xdr, &node_info->tsk_name, len))
+    return -1;
+  if (!xdr_uint64_t(&xdr, &node_info->tsk_inode))
+    return -1;
+  if (!xdr_uint32_t(&xdr, &node_info->tsk_allocated))
+    return -1;
+
+  /* Resize buffer to actual length. */
+  len = xdr_getpos(&xdr);
+  xdr_destroy(&xdr);
+  if ((buf = realloc(buf, len)) == NULL)
+    return -1;
+
+  /* Send serialised tsk_node out. */
+  if (send_file_write(buf, len) < 0)
+    return -1;
+
+  return 0;
+}
+
+/* Parse TSK error and send it to the appliance. */
+static void reply_with_tsk_error(void)
+{
+  const char *buf = NULL;
+
+  if (tsk_error_get_errno() != 0) {
+    buf = tsk_error_get();
+    reply_with_error("TSK error: %s", buf);
+  }
+}
+
+#endif /* !HAVE_LIBTSK */

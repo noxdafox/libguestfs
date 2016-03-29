@@ -13015,6 +13015,22 @@ given its inode.
 
 On some filesystem, it can find deleted files." };
 
+  { defaults with
+    name = "filesystem_walk0"; added = (1, 33, 16);
+    style = RErr, [Mountable "device"; FileOut "filename";], [];
+    proc_nr = Some 468;
+    optional = Some "libtsk";
+    progress = true; cancellable = true;
+    shortdesc = "walks through the filesystem content";
+    longdesc = "\
+This specialised command is used to walk through the internal structures
+of a disk partition (eg. F</dev/sda1>) in order to return a list of all
+the files and directories stored within.
+
+For each file or directory found, the function reports its path, its inode and whether
+it is allocated or not.
+
+The output is stored in F<filename> on the host encoded in XDR format." };
 ]
 
 (* Non-API meta-commands available only in guestfish.
