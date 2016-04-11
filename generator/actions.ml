@@ -12958,6 +12958,15 @@ and save it as F<filename> on the local machine.
 
 This allows to download deleted or inaccessible files." };
 
+  { defaults with
+    name = "internal_filesystem_walk"; added = (1, 33, 18);
+    style = RErr, [Mountable "device"; FileOut "filename"], [];
+    proc_nr = Some 465;
+    visibility = VInternal;
+    optional = Some "libtsk";
+    shortdesc = "walk through the filesystem content";
+    longdesc = "Internal function for filesystem_walk." };
+
 ]
 
 (* Non-API meta-commands available only in guestfish.
