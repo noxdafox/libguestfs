@@ -19,18 +19,19 @@ import unittest
 import os
 import guestfs
 
-class Test070OptArgs (unittest.TestCase):
-    def setUp (self):
-        self.g = guestfs.GuestFS (python_return_dict=True)
 
-    def test_no_optargs (self):
-        self.g.add_drive ("/dev/null")
+class Test070OptArgs(unittest.TestCase):
+    def setUp(self):
+        self.g = guestfs.GuestFS(python_return_dict=True)
 
-    def test_one_optarg (self):
-        self.g.add_drive ("/dev/null", readonly = True)
+    def test_no_optargs(self):
+        self.g.add_drive("/dev/null")
 
-    def test_two_optargs (self):
-        self.g.add_drive ("/dev/null", iface = "virtio", format = "raw")
+    def test_one_optarg(self):
+        self.g.add_drive("/dev/null", readonly=True)
 
-    def tearDown (self):
-        self.g.close ()
+    def test_two_optargs(self):
+        self.g.add_drive("/dev/null", iface="virtio", format="raw")
+
+    def tearDown(self):
+        self.g.close()

@@ -26,7 +26,6 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <sys/types.h>
-#include <sys/wait.h>
 #include <sys/stat.h>
 #include <signal.h>
 #include <sys/socket.h>
@@ -371,6 +370,7 @@ launch_direct (guestfs_h *g, void *datav, const char *arg)
   if (qemu_supports (g, data, "-nodefaults"))
     ADD_CMDLINE ("-nodefaults");
 
+  /* This disables the host-side display (SDL, Gtk). */
   ADD_CMDLINE ("-display");
   ADD_CMDLINE ("none");
 
@@ -563,7 +563,7 @@ launch_direct (guestfs_h *g, void *datav, const char *arg)
   /* Add the ext2 appliance drive (after all the drives). */
   if (has_appliance_drive) {
     ADD_CMDLINE ("-drive");
-    ADD_CMDLINE_PRINTF ("file=%s,snapshot=on,id=appliance,cache=unsafe,if=none",
+    ADD_CMDLINE_PRINTF ("file=%s,snapshot=on,id=appliance,cache=unsafe,if=none,format=raw",
                         appliance);
 
     if (virtio_scsi) {
@@ -586,7 +586,8 @@ launch_direct (guestfs_h *g, void *datav, const char *arg)
   ADD_CMDLINE ("-serial");
   ADD_CMDLINE ("stdio");
 
-  if (qemu_supports_device (g, data, "Serial Graphics Adapter")) {
+  if (g->verbose &&
+      qemu_supports_device (g, data, "Serial Graphics Adapter")) {
     /* Use sgabios instead of vgabios.  This means we'll see BIOS
      * messages on the serial port, and also works around this bug
      * in qemu 1.1.0:
@@ -849,8 +850,8 @@ launch_direct (guestfs_h *g, void *datav, const char *arg)
     close (sv[0]);
   if (data->pid > 0) kill (data->pid, 9);
   if (data->recoverypid > 0) kill (data->recoverypid, 9);
-  if (data->pid > 0) waitpid (data->pid, NULL, 0);
-  if (data->recoverypid > 0) waitpid (data->recoverypid, NULL, 0);
+  if (data->pid > 0) guestfs_int_waitpid_noerror (data->pid);
+  if (data->recoverypid > 0) guestfs_int_waitpid_noerror (data->recoverypid);
   data->pid = 0;
   data->recoverypid = 0;
   memset (&g->launch_t, 0, sizeof g->launch_t);
@@ -1482,16 +1483,14 @@ shutdown_direct (guestfs_h *g, void *datav, int check_for_errors)
 
   /* Wait for subprocess(es) to exit. */
   if (g->recovery_proc /* RHBZ#998482 */ && data->pid > 0) {
-    if (waitpid (data->pid, &status, 0) == -1) {
-      perrorf (g, "waitpid (qemu)");
+    if (guestfs_int_waitpid (g, data->pid, &status, "qemu") == -1)
       ret = -1;
-    }
     else if (!WIFEXITED (status) || WEXITSTATUS (status) != 0) {
       guestfs_int_external_command_failed (g, status, g->hv, NULL);
       ret = -1;
     }
   }
-  if (data->recoverypid > 0) waitpid (data->recoverypid, NULL, 0);
+  if (data->recoverypid > 0) guestfs_int_waitpid_noerror (data->recoverypid);
 
   data->pid = data->recoverypid = 0;
 

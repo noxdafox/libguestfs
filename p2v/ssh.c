@@ -16,12 +16,13 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
-/* This file handles the ssh connections to the conversion server.
+/**
+ * This file handles the ssh connections to the conversion server.
  *
  * virt-p2v will open several connections over the lifetime of
  * the conversion process.
  *
- * In 'test_connection', it will first open a connection (to check it
+ * In C<test_connection>, it will first open a connection (to check it
  * is possible) and query virt-v2v on the server to ensure it exists,
  * it is the right version, and so on.  This connection is then
  * closed, because in the GUI case we don't want to deal with keeping
@@ -30,10 +31,10 @@
  * Once we start conversion, we will open a control connection to send
  * the libvirt configuration data and to start up virt-v2v, and we
  * will open up one data connection per local hard disk.  The data
- * connection(s) have a reverse port forward to the local qemu-nbd
- * server which is serving the content of that hard disk.  The remote
- * port for each data connection is assigned by ssh.  See
- * 'open_data_connection' and 'start_remote_conversion'.
+ * connection(s) have a reverse port forward to the local
+ * L<qemu-nbd(8)> server which is serving the content of that hard
+ * disk.  The remote port for each data connection is assigned by ssh.
+ * See C<open_data_connection> and C<start_remote_conversion>.
  */
 
 #include <config.h>
@@ -45,6 +46,7 @@
 #include <inttypes.h>
 #include <unistd.h>
 #include <errno.h>
+#include <error.h>
 #include <locale.h>
 #include <assert.h>
 #include <libintl.h>
@@ -78,11 +80,9 @@ set_ssh_error (const char *fs, ...)
   len = vasprintf (&msg, fs, args);
   va_end (args);
 
-  if (len < 0) {
-    perror ("vasprintf");
-    fprintf (stderr, "original error format string: %s\n", fs);
-    exit (EXIT_FAILURE);
-  }
+  if (len < 0)
+    error (EXIT_FAILURE, errno,
+           "vasprintf (original error format string: %s)", fs);
 
   free (ssh_error);
   ssh_error = msg;
@@ -165,7 +165,9 @@ free_regexps (void)
   pcre_free (portfwd_re);
 }
 
-/* Download URL to local file using the external 'curl' command. */
+/**
+ * Download URL to local file using the external 'curl' command.
+ */
 static int
 curl_download (const char *url, const char *local_file)
 {
@@ -177,15 +179,11 @@ curl_download (const char *url, const char *local_file)
 
   /* Use a secure curl config file because escaping is easier. */
   fd = mkstemp (curl_config_file);
-  if (fd == -1) {
-    perror ("mkstemp");
-    exit (EXIT_FAILURE);
-  }
+  if (fd == -1)
+    error (EXIT_FAILURE, errno, "mkstemp: %s", curl_config_file);
   fp = fdopen (fd, "w");
-  if (fp == NULL) {
-    perror ("fdopen");
-    exit (EXIT_FAILURE);
-  }
+  if (fp == NULL)
+    error (EXIT_FAILURE, errno, "fdopen: %s", curl_config_file);
   fprintf (fp, "url = \"");
   len = strlen (url);
   for (i = 0; i < len; ++i) {
@@ -204,17 +202,13 @@ curl_download (const char *url, const char *local_file)
 
   /* Run curl to download the URL to a file. */
   if (asprintf (&curl_cmd, "curl -f -o %s -K %s",
-                local_file, curl_config_file) == -1) {
-    perror ("asprintf");
-    exit (EXIT_FAILURE);
-  }
+                local_file, curl_config_file) == -1)
+    error (EXIT_FAILURE, errno, "asprintf");
 
   r = system (curl_cmd);
   /* unlink (curl_config_file); - useful for debugging */
-  if (r == -1) {
-    perror ("system");
-    exit (EXIT_FAILURE);
-  }
+  if (r == -1)
+    error (EXIT_FAILURE, errno, "system: %s", curl_cmd);
 
   /* Did curl subprocess fail? */
   if (WIFEXITED (r) && WEXITSTATUS (r) != 0) {
@@ -232,7 +226,9 @@ curl_download (const char *url, const char *local_file)
   return 0;
 }
 
-/* Re-cache the identity_url if needed. */
+/**
+ * Re-cache the C<config-E<gt>identity_url> if needed.
+ */
 static int
 cache_ssh_identity (struct config *config)
 {
@@ -246,15 +242,11 @@ cache_ssh_identity (struct config *config)
   /* Generate a random filename. */
   free (config->identity_file);
   config->identity_file = strdup ("/tmp/id.XXXXXX");
-  if (config->identity_file == NULL) {
-    perror ("strdup");
-    exit (EXIT_FAILURE);
-  }
+  if (config->identity_file == NULL)
+    error (EXIT_FAILURE, errno, "strdup");
   fd = mkstemp (config->identity_file);
-  if (fd == -1) {
-    perror ("mkstemp");
-    exit (EXIT_FAILURE);
-  }
+  if (fd == -1)
+    error (EXIT_FAILURE, errno, "mkstemp");
   close (fd);
 
   /* Curl download URL to file. */
@@ -268,7 +260,8 @@ cache_ssh_identity (struct config *config)
   return 0;
 }
 
-/* Start ssh subprocess with the standard arguments and possibly some
+/**
+ * Start ssh subprocess with the standard arguments and possibly some
  * optional arguments.  Also handles authentication.
  */
 static mexp_h *
@@ -299,10 +292,8 @@ start_ssh (struct config *config, char **extra_args, int wait_prompt)
   else
     nr_args += 13;
   args = malloc (sizeof (char *) * nr_args);
-  if (args == NULL) {
-    perror ("malloc");
-    exit (EXIT_FAILURE);
-  }
+  if (args == NULL)
+    error (EXIT_FAILURE, errno, "malloc");
 
   j = 0;
   args[j++] = "ssh";
@@ -430,10 +421,8 @@ start_ssh (struct config *config, char **extra_args, int wait_prompt)
        */
       r = pcre_get_substring (h->buffer, ovector,
                               mexp_get_pcre_error (h), 1, &matched);
-      if (r < 0) {
-        fprintf (stderr, "error: PCRE error reading substring (%d)\n", r);
-        exit (EXIT_FAILURE);
-      }
+      if (r < 0)
+        error (EXIT_FAILURE, 0, "PCRE error reading substring (%d)", r);
       r = STREQ (magic, matched);
       pcre_free_substring (matched);
       if (!r)
@@ -716,16 +705,12 @@ add_option (const char *type, char ***drivers, const char *name, size_t len)
   n++;
 
   *drivers = realloc (*drivers, (n+1) * sizeof (char *));
-  if (*drivers == NULL) {
-    perror ("malloc");
-    exit (EXIT_FAILURE);
-  }
+  if (*drivers == NULL)
+    error (EXIT_FAILURE, errno, "malloc");
 
   (*drivers)[n-1] = strndup (name, len);
-  if ((*drivers)[n-1] == NULL) {
-    perror ("strndup");
-    exit (EXIT_FAILURE);
-  }
+  if ((*drivers)[n-1] == NULL)
+    error (EXIT_FAILURE, errno, "strndup");
   (*drivers)[n] = NULL;
 
 #if DEBUG_STDERR

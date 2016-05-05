@@ -26,18 +26,23 @@ open Common_utils
 open Types
 open Utils
 
+module NetTypeAndName = struct
+  type t = Types.vnet_type * string option
+  let compare = Pervasives.compare
+end
+module NetworkMap = Map.Make (NetTypeAndName)
+
 type cmdline = {
   compressed : bool;
   debug_overlays : bool;
   do_copy : bool;
   in_place : bool;
-  network_map : ((vnet_type * string) * string) list;
-  no_trim : string list;
+  network_map : string NetworkMap.t;
   output_alloc : output_allocation;
   output_format : string option;
   output_name : string option;
   print_source : bool;
-  root_choice : [`Ask|`Single|`First|`Dev of string];
+  root_choice : root_choice;
 }
 
 let parse_cmdline () =
@@ -59,7 +64,7 @@ let parse_cmdline () =
   let password_file = ref None in
   let vdsm_vm_uuid = ref None in
   let vdsm_ovf_output = ref None in (* default "." *)
-  let vmtype = ref None in
+
   let set_string_option_once optname optref arg =
     match !optref with
     | Some _ ->
@@ -81,36 +86,30 @@ let parse_cmdline () =
       error (f_"unknown -i option: %s") s
   in
 
-  let network_map = ref [] in
+  let network_map = ref NetworkMap.empty in
   let add_network, add_bridge =
-    let add t str =
+    let add flag name t str =
       match String.split ":" str with
-      | "", "" -> error (f_"invalid --bridge or --network parameter")
-      | out, "" | "", out -> network_map := ((t, ""), out) :: !network_map
-      | in_, out -> network_map := ((t, in_), out) :: !network_map
+      | "", "" ->
+         error (f_"invalid %s parameter") flag
+      | out, "" | "", out ->
+         let key = t, None in
+         if NetworkMap.mem key !network_map then
+           error (f_"duplicate %s parameter.  Only one default mapping is allowed.") flag;
+         network_map := NetworkMap.add key out !network_map
+      | in_, out ->
+         let key = t, Some in_ in
+         if NetworkMap.mem key !network_map then
+           error (f_"duplicate %s parameter.  Duplicate mappings specified for %s '%s'.") flag name in_;
+         network_map := NetworkMap.add key out !network_map
     in
-    let add_network str = add Network str
-    and add_bridge str = add Bridge str in
+    let add_network str = add "-n/--network" (s_"network") Network str
+    and add_bridge str = add "-b/--bridge" (s_"bridge") Bridge str in
     add_network, add_bridge
   in
 
-  let no_trim = ref [] in
-  let set_no_trim = function
-    | "all" | "ALL" | "*" ->
-      (* Note: this is a magic value tested in the main code.  The
-       * no_trim list does NOT support wildcards.
-       *)
-      no_trim := ["*"]
-    | mps ->
-      let mps = String.nsplit "," mps in
-      List.iter (
-        fun mp ->
-          if String.length mp = 0 then
-            error (f_"--no-trim: empty parameter");
-          if mp.[0] <> '/' then
-            error (f_"--no-trim: %s: mountpoint/device name does not begin with '/'") mp;
-      ) mps;
-      no_trim := mps
+  let no_trim_warning _ =
+    warning (f_"the --no-trim option has been removed and now does nothing")
   in
 
   let output_mode = ref `Not_set in
@@ -129,20 +128,23 @@ let parse_cmdline () =
       error (f_"unknown -o option: %s") s
   in
 
-  let output_alloc = ref Sparse in
-  let set_output_alloc = function
-    | "sparse" -> output_alloc := Sparse
-    | "preallocated" -> output_alloc := Preallocated
+  let output_alloc = ref `Not_set in
+  let set_output_alloc mode =
+    if !output_alloc <> `Not_set then
+      error (f_"%s option used more than once on the command line") "-oa";
+    match mode with
+    | "sparse" -> output_alloc := `Sparse
+    | "preallocated" -> output_alloc := `Preallocated
     | s ->
       error (f_"unknown -oa option: %s") s
   in
 
-  let root_choice = ref `Ask in
+  let root_choice = ref AskRoot in
   let set_root_choice = function
-    | "ask" -> root_choice := `Ask
-    | "single" -> root_choice := `Single
-    | "first" -> root_choice := `First
-    | dev when String.is_prefix dev "/dev/" -> root_choice := `Dev dev
+    | "ask" -> root_choice := AskRoot
+    | "single" -> root_choice := SingleRoot
+    | "first" -> root_choice := FirstRoot
+    | dev when String.is_prefix dev "/dev/" -> root_choice := RootDev dev
     | s ->
       error (f_"unknown --root option: %s") s
   in
@@ -152,6 +154,10 @@ let parse_cmdline () =
 
   let vdsm_vol_uuids = ref [] in
   let add_vdsm_vol_uuid s = vdsm_vol_uuids := s :: !vdsm_vol_uuids in
+
+  let vmtype_warning _ =
+    warning (f_"the --vmtype option has been removed and now does nothing")
+  in
 
   let i_options =
     String.concat "|" (Modules_list.input_modules ())
@@ -181,7 +187,8 @@ let parse_cmdline () =
     "-n",        Arg.String add_network,    "in:out " ^ s_"Map network 'in' to 'out'";
     "--network", Arg.String add_network,    "in:out " ^ ditto;
     "--no-copy", Arg.Clear do_copy,         " " ^ s_"Just write the metadata";
-    "--no-trim", Arg.String set_no_trim,    "all|mp,mp,.." ^ " " ^ s_"Don't trim selected mounts";
+    "--no-trim", Arg.String no_trim_warning,
+                                            "-" ^ " " ^ s_"Ignored for backwards compatibility";
     "-o",        Arg.String set_output_mode, o_options ^ " " ^ s_"Set output mode (default: libvirt)";
     "-oa",       Arg.String set_output_alloc,
                                             "sparse|preallocated " ^ s_"Set output allocation mode";
@@ -204,8 +211,8 @@ let parse_cmdline () =
                                             "uuid " ^ s_"Output VM UUID";
     "--vdsm-ovf-output", Arg.String (set_string_option_once "--vdsm-ovf-output" vdsm_ovf_output),
                                             " " ^ s_"Output OVF file";
-    "--vmtype",  Arg.String (set_string_option_once "--vmtype" vmtype),
-                                            "server|desktop " ^ s_"Set vmtype (for RHEV)";
+    "--vmtype",  Arg.String vmtype_warning,
+                                            "- " ^ s_"Ignored for backwards compatibility";
   ] in
   let argspec = set_standard_options argspec in
   let args = ref [] in
@@ -246,8 +253,10 @@ read the man page virt-v2v(1).
   let in_place = !in_place in
   let machine_readable = !machine_readable in
   let network_map = !network_map in
-  let no_trim = !no_trim in
-  let output_alloc = !output_alloc in
+  let output_alloc =
+    match !output_alloc with
+    | `Not_set | `Sparse -> Sparse
+    | `Preallocated -> Preallocated in
   let output_conn = !output_conn in
   let output_format = !output_format in
   let output_mode = !output_mode in
@@ -262,13 +271,6 @@ read the man page virt-v2v(1).
   let vdsm_vm_uuid = !vdsm_vm_uuid in
   let vdsm_ovf_output =
     match !vdsm_ovf_output with None -> "." | Some s -> s in
-  let vmtype =
-    match !vmtype with
-    | Some "server" -> Some Server
-    | Some "desktop" -> Some Desktop
-    | None -> None
-    | _ ->
-      error (f_"unknown --vmtype option, must be \"server\" or \"desktop\"") in
 
   (* No arguments and machine-readable mode?  Print out some facts
    * about what this binary supports.
@@ -344,8 +346,6 @@ read the man page virt-v2v(1).
         error (f_"-o glance: -os option cannot be used in this output mode");
       if qemu_boot then
         error (f_"-o glance: --qemu-boot option cannot be used in this output mode");
-      if vmtype <> None then
-        error (f_"--vmtype option cannot be used with '-o glance'");
       if not do_copy then
         error (f_"--no-copy and '-o glance' cannot be used at the same time");
       Output_glance.output_glance ()
@@ -356,8 +356,6 @@ read the man page virt-v2v(1).
         match output_storage with None -> "default" | Some os -> os in
       if qemu_boot then
         error (f_"-o libvirt: --qemu-boot option cannot be used in this output mode");
-      if vmtype <> None then
-        error (f_"--vmtype option cannot be used with '-o libvirt'");
       if not do_copy then
         error (f_"--no-copy and '-o libvirt' cannot be used at the same time");
       Output_libvirt.output_libvirt output_conn output_storage
@@ -372,8 +370,6 @@ read the man page virt-v2v(1).
         | Some d -> d in
       if qemu_boot then
         error (f_"-o local: --qemu-boot option cannot be used in this output mode");
-      if vmtype <> None then
-        error (f_"--vmtype option cannot be used with '-o local'");
       Output_local.output_local os
 
     | `Null ->
@@ -383,8 +379,6 @@ read the man page virt-v2v(1).
         error (f_"-o null: -os option cannot be used in this output mode");
       if qemu_boot then
         error (f_"-o null: --qemu-boot option cannot be used in this output mode");
-      if vmtype <> None then
-        error (f_"--vmtype option cannot be used with '-o null'");
       Output_null.output_null ()
 
     | `QEmu ->
@@ -405,7 +399,7 @@ read the man page virt-v2v(1).
         | Some d -> d in
       if qemu_boot then
         error (f_"-o rhev: --qemu-boot option cannot be used in this output mode");
-      Output_rhev.output_rhev os vmtype output_alloc
+      Output_rhev.output_rhev os output_alloc
 
     | `VDSM ->
       let os =
@@ -428,12 +422,11 @@ read the man page virt-v2v(1).
         vm_uuid = vdsm_vm_uuid;
         ovf_output = vdsm_ovf_output;
       } in
-      Output_vdsm.output_vdsm os vdsm_params vmtype output_alloc in
+      Output_vdsm.output_vdsm os vdsm_params output_alloc in
 
   {
     compressed = compressed; debug_overlays = debug_overlays;
     do_copy = do_copy; in_place = in_place; network_map = network_map;
-    no_trim = no_trim;
     output_alloc = output_alloc; output_format = output_format;
     output_name = output_name;
     print_source = print_source; root_choice = root_choice;

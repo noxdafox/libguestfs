@@ -118,7 +118,8 @@ let create_libvirt_xml ?pool source target_buses guestcaps
           * (https://bugzilla.redhat.com/show_bug.cgi?id=1217444#c6) but
           * until that day we have to use a bunch of heuristics. XXX
           *)
-         let code, vars_template = find_uefi_firmware guestcaps.gcaps_arch in
+         let { code = code; vars = vars_template } =
+           find_uefi_firmware guestcaps.gcaps_arch in
          [ e "loader" ["readonly", "yes"; "type", "pflash"] [ PCData code ];
            e "nvram" ["template", vars_template] [] ] in
 
@@ -242,10 +243,10 @@ let create_libvirt_xml ?pool source target_buses guestcaps
 
   (match source.s_display with
    | Some { s_keymap = Some km } -> append_attr ("keymap", km) graphics
-   | _ -> ());
+   | Some { s_keymap = None } | None -> ());
   (match source.s_display with
    | Some { s_password = Some pw } -> append_attr ("passwd", pw) graphics
-   | _ -> ());
+   | Some { s_password = None } | None -> ());
   (match source.s_display with
    | Some { s_listen = listen } ->
       (match listen with
@@ -256,12 +257,12 @@ let create_libvirt_xml ?pool source target_buses guestcaps
           let sub = e "listen" [ "type", "network"; "network", n ] [] in
           append_child sub graphics
        | LNone -> ())
-   | _ -> ());
+   | None -> ());
   (match source.s_display with
    | Some { s_port = Some p } ->
       append_attr ("autoport", "no") graphics;
       append_attr ("port", string_of_int p) graphics
-   | _ ->
+   | Some { s_port = None } | None ->
       append_attr ("autoport", "yes") graphics;
       append_attr ("port", "-1") graphics);
 

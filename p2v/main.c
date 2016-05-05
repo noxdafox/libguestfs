@@ -26,6 +26,7 @@
 #include <getopt.h>
 #include <fcntl.h>
 #include <errno.h>
+#include <error.h>
 #include <dirent.h>
 #include <locale.h>
 #include <libintl.h>
@@ -145,11 +146,10 @@ main (int argc, char *argv[])
         cmdline = parse_cmdline_string (optarg);
         cmdline_source = CMDLINE_SOURCE_COMMAND_LINE;
       }
-      else {
-        fprintf (stderr, _("%s: unknown long option: %s (%d)\n"),
-                 guestfs_int_program_name, long_options[option_index].name, option_index);
-        exit (EXIT_FAILURE);
-      }
+      else
+        error (EXIT_FAILURE, 0,
+               _("unknown long option: %s (%d)"),
+               long_options[option_index].name, option_index);
       break;
 
     case 'v':
@@ -178,33 +178,31 @@ main (int argc, char *argv[])
 
   set_config_defaults (config);
 
-  /* If /proc/cmdline exists and contains "p2v.server=" then we enable
-   * non-interactive configuration.
-   * If /proc/cmdline contains p2v.debug then we enable verbose mode
-   * even for interactive configuration.
+  /* Parse /proc/cmdline (if it exists) or use the --cmdline parameter
+   * to initialize the configuration.  This allows defaults to be pass
+   * using the kernel command line, with additional GUI configuration
+   * later.
    */
   if (cmdline == NULL) {
     cmdline = parse_proc_cmdline ();
-    if (cmdline == NULL)
-      goto gui;
-    cmdline_source = CMDLINE_SOURCE_PROC_CMDLINE;
+    if (cmdline != NULL)
+      cmdline_source = CMDLINE_SOURCE_PROC_CMDLINE;
   }
 
-  if (get_cmdline_key (cmdline, "p2v.debug") != NULL)
-    config->verbose = 1;
+  if (cmdline)
+    update_config_from_kernel_cmdline (config, cmdline);
 
-  if (get_cmdline_key (cmdline, "p2v.server") != NULL)
-    kernel_configuration (config, cmdline, cmdline_source);
+  /* If p2v.server exists, then we use the non-interactive kernel
+   * conversion.  Otherwise we run the GUI.
+   */
+  if (config->server != NULL)
+    kernel_conversion (config, cmdline, cmdline_source);
   else {
-  gui:
-    if (!gui_possible) {
-      fprintf (stderr,
-               _("%s: gtk_init_check returned false, indicating that\n"
-                 "a GUI is not possible on this host.  Check X11, $DISPLAY etc.\n"),
-               guestfs_int_program_name);
-      exit (EXIT_FAILURE);
-    }
-    gui_application (config);
+    if (!gui_possible)
+      error (EXIT_FAILURE, 0,
+             _("gtk_init_check returned false, indicating that\n"
+               "a GUI is not possible on this host.  Check X11, $DISPLAY etc."));
+    gui_conversion (config);
   }
 
   guestfs_int_free_string_list (cmdline);
@@ -228,10 +226,8 @@ set_config_defaults (struct config *config)
   if (gethostname (hostname, sizeof hostname) == -1) {
     perror ("gethostname");
     /* Generate a simple random name. */
-    if (guestfs_int_random_string (hostname, 8) == -1) {
-      perror ("/dev/urandom");
-      exit (EXIT_FAILURE);
-    }
+    if (guestfs_int_random_string (hostname, 8) == -1)
+      error (EXIT_FAILURE, errno, "guestfs_int_random_string");
   } else {
     char *p;
 
@@ -326,19 +322,15 @@ partition_parent (dev_t part_dev)
 
   if (asprintf (&path, "/sys/dev/block/%ju:%ju/../dev",
                 (uintmax_t) major (part_dev),
-                (uintmax_t) minor (part_dev)) == -1) {
-    perror ("asprintf");
-    exit (EXIT_FAILURE);
-  }
+                (uintmax_t) minor (part_dev)) == -1)
+    error (EXIT_FAILURE, errno, "asprintf");
 
   fp = fopen (path, "r");
   if (fp == NULL)
     return 0;
 
-  if (getline (&content, &len, fp) == -1) {
-    perror ("getline");
-    exit (EXIT_FAILURE);
-  }
+  if (getline (&content, &len, fp) == -1)
+    error (EXIT_FAILURE, errno, "getline");
 
   if (sscanf (content, "%u:%u", &parent_major, &parent_minor) != 2)
     return 0;
@@ -361,10 +353,8 @@ device_contains (const char *dev, dev_t root_device)
   CLEANUP_FREE char *dev_name = NULL;
   dev_t root_device_parent;
 
-  if (asprintf (&dev_name, "/dev/%s", dev) == -1) {
-    perror ("asprintf");
-    exit (EXIT_FAILURE);
-  }
+  if (asprintf (&dev_name, "/dev/%s", dev) == -1)
+    error (EXIT_FAILURE, errno, "asprintf");
 
   if (stat (dev_name, &statbuf) == -1)
     return 0;
@@ -399,10 +389,8 @@ find_all_disks (void)
    * matches the common patterns for disk names.
    */
   dir = opendir ("/sys/block");
-  if (!dir) {
-    perror ("opendir");
-    exit (EXIT_FAILURE);
-  }
+  if (!dir)
+    error (EXIT_FAILURE, errno, "opendir");
 
   for (;;) {
     errno = 0;
@@ -422,10 +410,8 @@ find_all_disks (void)
 
       nr_disks++;
       all_disks = realloc (all_disks, sizeof (char *) * (nr_disks + 1));
-      if (!all_disks) {
-        perror ("realloc");
-        exit (EXIT_FAILURE);
-      }
+      if (!all_disks)
+        error (EXIT_FAILURE, errno, "realloc");
 
       all_disks[nr_disks-1] = strdup (d->d_name);
 
@@ -439,26 +425,20 @@ find_all_disks (void)
       nr_removable++;
       all_removable = realloc (all_removable,
                                sizeof (char *) * (nr_removable + 1));
-      if (!all_removable) {
-        perror ("realloc");
-        exit (EXIT_FAILURE);
-      }
+      if (!all_removable)
+        error (EXIT_FAILURE, errno, "realloc");
       all_removable[nr_removable-1] = strdup (d->d_name);
       all_removable[nr_removable] = NULL;
     }
   }
 
   /* Check readdir didn't fail */
-  if (errno != 0) {
-    perror ("readdir: /sys/block");
-    exit (EXIT_FAILURE);
-  }
+  if (errno != 0)
+    error (EXIT_FAILURE, errno, "readdir: %s", "/sys/block");
 
   /* Close the directory handle */
-  if (closedir (dir) == -1) {
-    perror ("closedir: /sys/block");
-    exit (EXIT_FAILURE);
-  }
+  if (closedir (dir) == -1)
+    error (EXIT_FAILURE, errno, "closedir: %s", "/sys/block");
 
   if (all_disks)
     qsort (all_disks, nr_disks, sizeof (char *), compare);
@@ -477,10 +457,8 @@ find_all_interfaces (void)
    * /sys/class/net which matches some common patterns.
    */
   dir = opendir ("/sys/class/net");
-  if (!dir) {
-    perror ("opendir");
-    exit (EXIT_FAILURE);
-  }
+  if (!dir)
+    error (EXIT_FAILURE, errno, "opendir: %s", "/sys/class/net");
 
   for (;;) {
     errno = 0;
@@ -499,26 +477,20 @@ find_all_interfaces (void)
       nr_interfaces++;
       all_interfaces =
         realloc (all_interfaces, sizeof (char *) * (nr_interfaces + 1));
-      if (!all_interfaces) {
-        perror ("realloc");
-        exit (EXIT_FAILURE);
-      }
+      if (!all_interfaces)
+        error (EXIT_FAILURE, errno, "realloc");
       all_interfaces[nr_interfaces-1] = strdup (d->d_name);
       all_interfaces[nr_interfaces] = NULL;
     }
   }
 
   /* Check readdir didn't fail */
-  if (errno != 0) {
-    perror ("readdir: /sys/class/net");
-    exit (EXIT_FAILURE);
-  }
+  if (errno != 0)
+    error (EXIT_FAILURE, errno, "readdir: %s", "/sys/class/net");
 
   /* Close the directory handle */
-  if (closedir (dir) == -1) {
-    perror ("closedir: /sys/class/net");
-    exit (EXIT_FAILURE);
-  }
+  if (closedir (dir) == -1)
+    error (EXIT_FAILURE, errno, "closedir: %s", "/sys/class/net");
 
   if (all_interfaces)
     qsort (all_interfaces, nr_interfaces, sizeof (char *), compare);

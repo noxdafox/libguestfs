@@ -26,6 +26,7 @@
 #include <unistd.h>
 #include <getopt.h>
 #include <errno.h>
+#include <error.h>
 #include <locale.h>
 #include <assert.h>
 #include <libintl.h>
@@ -117,10 +118,8 @@ main (int argc, char *argv[])
   int option_index;
 
   g = guestfs_create ();
-  if (g == NULL) {
-    fprintf (stderr, _("guestfs_create: failed to create handle\n"));
-    exit (EXIT_FAILURE);
-  }
+  if (g == NULL)
+    error (EXIT_FAILURE, errno, "guestfs_create");
 
   for (;;) {
     c = getopt_long (argc, argv, options, long_options, &option_index);
@@ -138,12 +137,10 @@ main (int argc, char *argv[])
         echo_keys = 1;
       } else if (STREQ (long_options[option_index].name, "format")) {
         OPTION_format;
-      } else {
-        fprintf (stderr, _("%s: unknown long option: %s (%d)\n"),
-                 guestfs_int_program_name,
-                 long_options[option_index].name, option_index);
-        exit (EXIT_FAILURE);
-      }
+      } else
+        error (EXIT_FAILURE, 0,
+               _("unknown long option: %s (%d)"),
+               long_options[option_index].name, option_index);
       break;
 
     case 'a':
@@ -187,14 +184,22 @@ main (int argc, char *argv[])
   assert (live == 0);
 
   /* User must not specify more arguments on the command line. */
-  if (optind != argc)
+  if (optind != argc) {
+    fprintf (stderr, _("%s: error: extra argument '%s' on command line.\n"
+             "Make sure to specify the argument for --format "
+             "like '--format=%s'.\n"),
+             guestfs_int_program_name, argv[optind], argv[optind]);
     usage (EXIT_FAILURE);
+  }
 
   CHECK_OPTION_format_consumed;
 
   /* User must have specified some drives. */
-  if (drvs == NULL)
+  if (drvs == NULL) {
+    fprintf (stderr, _("%s: error: you must specify at least one -a or -d option.\n"),
+             guestfs_int_program_name);
     usage (EXIT_FAILURE);
+  }
 
   /* Add drives, inspect and mount.  Note that inspector is always true,
    * and there is no -m option.

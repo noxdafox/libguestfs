@@ -365,7 +365,7 @@ let run_parts ~debug ~sysroot ~blockdev ~log_file ?(new_wd = "")
   let new_wd =
     match sysroot, new_wd with
     | (Out|Subroot), "" -> "''"
-    | _, dir -> dir in
+    | (In|Out|Subroot), dir -> dir in
   List.iter (
     fun x ->
       message (f_"Running: %s/%s") hook_name x;
@@ -781,9 +781,8 @@ let main () =
     ) @ mkfs_options @ [ "-t"; cmdline.fs_type; blockdev ] in
   ignore (g#debug "sh" (Array.of_list ([ "mkfs" ] @ mkfs_options)));
   g#set_label blockdev root_label;
-  (match cmdline.fs_type with
-  | x when String.is_prefix x "ext" -> g#set_uuid blockdev rootfs_uuid
-  | _ -> ());
+  if String.is_prefix cmdline.fs_type "ext" then
+    g#set_uuid blockdev rootfs_uuid;
   g#mount blockdev "/";
   g#mkmountpoint "/tmp";
   mount_aux ();

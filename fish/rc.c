@@ -30,6 +30,7 @@
 #include <signal.h>
 #include <sys/socket.h>
 #include <errno.h>
+#include <error.h>
 
 #include <rpc/types.h>
 #include <rpc/xdr.h>
@@ -54,21 +55,17 @@ create_sockdir (void)
   /* Create the directory, and ensure it is owned by the user. */
   snprintf (dir, sizeof dir, SOCKET_DIR, (uintmax_t) euid);
   r = mkdir (dir, 0700);
-  if (r == -1 && errno != EEXIST) {
+  if (r == -1 && errno != EEXIST)
   error:
-    perror (dir);
-    exit (EXIT_FAILURE);
-  }
+    error (EXIT_FAILURE, errno, "%s", dir);
   if (lstat (dir, &statbuf) == -1)
     goto error;
   if (!S_ISDIR (statbuf.st_mode) ||
       (statbuf.st_mode & 0777) != 0700 ||
-      statbuf.st_uid != euid) {
-    fprintf (stderr,
-             _("guestfish: '%s' is not a directory or has insecure owner or permissions\n"),
-             dir);
-    exit (EXIT_FAILURE);
-  }
+      statbuf.st_uid != euid)
+    error (EXIT_FAILURE, 0,
+           _("'%s' is not a directory or has insecure owner or permissions"),
+           dir);
 }
 
 static void
@@ -99,10 +96,8 @@ receive_stdout (int s)
 
   if (NULL == cmptr) {
     cmptr = malloc (controllen);
-    if (NULL == cmptr) {
-      perror ("malloc");
-      exit (EXIT_FAILURE);
-    }
+    if (NULL == cmptr)
+      error (EXIT_FAILURE, errno, "malloc");
   }
 
   /* Don't specify a source */
@@ -122,10 +117,8 @@ receive_stdout (int s)
 
   /* Read a message from the socket */
   ssize_t n = recvmsg (s, &msg, 0);
-  if (n < 0) {
-    perror ("recvmsg stdout fd");
-    exit (EXIT_FAILURE);
-  }
+  if (n < 0)
+    error (EXIT_FAILURE, errno, "recvmsg stdout fd");
 
   h = CMSG_FIRSTHDR(&msg);
   if (NULL == h) {
@@ -170,10 +163,8 @@ send_stdout (int s)
   /* Initialize the control data */
   if (NULL == cmptr) {
     cmptr = malloc (controllen);
-    if (NULL == cmptr) {
-      perror ("malloc");
-      exit (EXIT_FAILURE);
-    }
+    if (NULL == cmptr)
+      error (EXIT_FAILURE, errno, "malloc");
   }
   cmptr->cmsg_level = SOL_SOCKET;
   cmptr->cmsg_type  = SCM_RIGHTS;
@@ -187,10 +178,8 @@ send_stdout (int s)
   void *data = CMSG_DATA (cmptr);
   *(int *)data = STDOUT_FILENO;
 
-  if (sendmsg (s, &msg, 0) != 1) {
-    perror ("sendmsg stdout fd");
-    exit (EXIT_FAILURE);
-  }
+  if (sendmsg (s, &msg, 0) != 1)
+    error (EXIT_FAILURE, errno, "sendmsg stdout fd");
 }
 
 static void
@@ -230,10 +219,8 @@ rc_listen (void)
   create_sockdir ();
 
   pid = fork ();
-  if (pid == -1) {
-    perror ("fork");
-    exit (EXIT_FAILURE);
-  }
+  if (pid == -1)
+    error (EXIT_FAILURE, errno, "fork");
 
   if (pid > 0) {
     /* Parent process. */
@@ -260,19 +247,13 @@ rc_listen (void)
   create_sockpath (pid, sockpath, sizeof sockpath, &addr);
 
   sock = socket (AF_UNIX, SOCK_STREAM|SOCK_CLOEXEC, 0);
-  if (sock == -1) {
-    perror ("socket");
-    exit (EXIT_FAILURE);
-  }
+  if (sock == -1)
+    error (EXIT_FAILURE, errno, "socket");
   unlink (sockpath);
-  if (bind (sock, (struct sockaddr *) &addr, sizeof addr) == -1) {
-    perror (sockpath);
-    exit (EXIT_FAILURE);
-  }
-  if (listen (sock, 4) == -1) {
-    perror ("listen");
-    exit (EXIT_FAILURE);
-  }
+  if (bind (sock, (struct sockaddr *) &addr, sizeof addr) == -1)
+    error (EXIT_FAILURE, errno, "bind: %s", sockpath);
+  if (listen (sock, 4) == -1)
+    error (EXIT_FAILURE, errno, "listen: %s", sockpath);
 
   /* Read commands and execute them. */
   while (!quit) {
@@ -309,10 +290,8 @@ rc_listen (void)
         /* We have to extend and NULL-terminate the argv array. */
         argc = call.args.args_len;
         argv = realloc (call.args.args_val, (argc+1) * sizeof (char *));
-        if (argv == NULL) {
-          perror ("realloc");
-          exit (EXIT_FAILURE);
-        }
+        if (argv == NULL)
+          error (EXIT_FAILURE, errno, "realloc");
         call.args.args_val = argv;
         argv[argc] = NULL;
 

@@ -55,7 +55,8 @@ and source_disk = {
   s_format : string option;
   s_controller : s_controller option;
 }
-and s_controller = Source_IDE | Source_SCSI | Source_virtio_blk
+and s_controller = Source_IDE | Source_SCSI |
+                   Source_virtio_blk | Source_virtio_SCSI
 and source_removable = {
   s_removable_type : s_removable_type;
   s_removable_controller : s_controller option;
@@ -187,7 +188,8 @@ and string_of_source_disk { s_qemu_uri = qemu_uri; s_format = format;
 and string_of_controller = function
   | Source_IDE -> "ide"
   | Source_SCSI -> "scsi"
-  | Source_virtio_blk -> "virtio"
+  | Source_virtio_blk -> "virtio-blk"
+  | Source_virtio_SCSI -> "virtio-scsi"
 
 and string_of_source_removable { s_removable_type = typ;
                                  s_removable_controller = controller;
@@ -366,13 +368,14 @@ and requested_guestcaps = {
   rcaps_net_bus : guestcaps_net_type option;
   rcaps_video : guestcaps_video_type option;
 }
-and guestcaps_block_type = Virtio_blk | IDE
+and guestcaps_block_type = Virtio_blk | Virtio_SCSI | IDE
 and guestcaps_net_type = Virtio_net | E1000 | RTL8139
 and guestcaps_video_type = QXL | Cirrus
 
 let string_of_block_type block_type =
   (match block_type with
    | Virtio_blk -> "virtio-blk"
+   | Virtio_SCSI -> "virtio-scsi"
    | IDE -> "ide")
 let string_of_net_type net_type =
   (match net_type with
@@ -441,6 +444,10 @@ let string_of_target_buses buses =
   string_of_target_bus_slots "ide" buses.target_ide_bus ^
   string_of_target_bus_slots "scsi" buses.target_scsi_bus
 
+type root_choice = AskRoot | SingleRoot | FirstRoot | RootDev of string
+
+type output_allocation = Sparse | Preallocated
+
 class virtual input = object
   method virtual as_options : string
   method virtual source : unit -> source
@@ -457,7 +464,3 @@ class virtual output = object
   method virtual create_metadata : source -> target list -> target_buses -> guestcaps -> inspect -> target_firmware -> unit
   method keep_serial_console = true
 end
-
-type output_allocation = Sparse | Preallocated
-
-type vmtype = Desktop | Server

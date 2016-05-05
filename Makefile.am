@@ -167,6 +167,15 @@ if HAVE_FUSE
 SUBDIRS += fuse
 endif
 
+# Miscellaneous utilities.
+if HAVE_BOOT_ANALYSIS
+SUBDIRS += utils/boot-analysis
+endif
+SUBDIRS += \
+	utils/boot-benchmark \
+	utils/qemu-boot \
+	utils/qemu-speed-test
+
 # po-docs must come after tools, inspector.
 if HAVE_PO4A
 SUBDIRS += po-docs
@@ -215,6 +224,7 @@ EXTRA_DIST = \
 	tests/automake2junit.ml \
 	tmp/.gitignore \
 	update-bugs.sh \
+	utils/README \
 	valgrind-suppressions \
 	website/bugs.png \
 	website/communicate.png \
@@ -232,14 +242,7 @@ EXTRA_DIST = \
 	website/pod.css \
 	website/standard.css \
 	zanata.xml \
-	zanata-pull.sh \
-	.x-sc_avoid_ctype_macros \
-	.x-sc_prohibit_have_config_h \
-	.x-sc_prohibit_magic_number_exit \
-	.x-sc_prohibit_strcmp \
-	.x-sc_prohibit_strcmp_and_strncmp \
-	.x-sc_TAB_in_indentation \
-	.x-sc_trailing_blank
+	zanata-pull.sh
 
 # XXX Eventually move builder/website under website/ top level directory.
 BUILDERFILES = \
@@ -265,37 +268,66 @@ maintainer-upload-website:
 	cp $(BUILDERFILES) $(WEBSITEDIR)/download/builder/
 
 # When doing 'make dist' update a few files automatically.
-dist-hook:
-	git log --decorate=false > ChangeLog
-	cp ChangeLog $(distdir)/ChangeLog
-	$(top_srcdir)/update-bugs.sh > BUGS-t
-	mv BUGS-t BUGS
-	cp BUGS $(distdir)/BUGS
-	git shortlog -s | $(AWK) -F'\t' '{print $$2}' | sort -f > AUTHORS-t
-	mv AUTHORS-t AUTHORS
-	cp AUTHORS $(distdir)/AUTHORS
-
-# Update the list of translatable files.  These are separated into:
 #
-#  po/POTFILES - files with ordinary extensions, but not OCaml files
+#  AUTHORS        - list of authors (created from git)
+#  BUGS           - list of bugs (created from Bugzilla)
+#  ChangeLog      - changelog (created from git)
+#  docs/C_SOURCE_FILES
+#                 - source files scanned for internal documentation
+#  po/POTFILES    - files with ordinary extensions, but not OCaml files
 #  po/POTFILES-pl - Perl files that don't end in *.pl, which need a
 #                   special xgettext option [not generated here]
 #  po/POTFILES-ml - OCaml files, which need a special tool to translate
-#
-# See po/Makefile.am.
-#
+
+dist-hook: AUTHORS BUGS ChangeLog docs/C_SOURCE_FILES po/POTFILES po/POTFILES-ml
+	cp AUTHORS $(distdir)/AUTHORS
+	cp BUGS $(distdir)/BUGS
+	cp ChangeLog $(distdir)/ChangeLog
+
+AUTHORS: configure.ac
+	rm -f $@ $@-t
+	git shortlog -s | $(AWK) -F'\t' '{print $$2}' | sort -f > $@-t
+	mv $@-t $@
+
+BUGS: configure.ac
+	rm -f $@ $@-t
+	$(top_srcdir)/update-bugs.sh > $@-t
+	mv $@-t $@
+
+ChangeLog: configure.ac
+	rm -f $@ $@-t
+	git log --decorate=false > $@-t
+	mv $@-t $@
+
 # This has to be in the top-level Makefile.am so that we have access
 # to DIST_SUBDIRS.
-all-local:
+docs/C_SOURCE_FILES: configure.ac
+	rm -f $@ $@-t
+	find $(DIST_SUBDIRS) -name '*.c' | \
+	grep -v -E '^(builder/index-parse.c|builder/index-scan.c|examples/|gnulib/|gobject/|perl/|tests/|test-data/)' | \
+	grep -v -E '/((guestfs|rc)_protocol\.c)$$' | \
+	grep -v -E '.*/errnostring\.c$$' | \
+	grep -v -E '.*-gperf\.c$$' | \
+	LC_ALL=C sort > $@-t
+	mv $@-t $@
+
+# For more information about translations, see po/Makefile.am.
+po/POTFILES: configure.ac
+	rm -f $@ $@-t
 	cd $(srcdir); \
 	find $(DIST_SUBDIRS) -name '*.c' -o -name '*.pl' -o -name '*.pm' | \
 	grep -v -E '^(examples|gnulib|gobject/docs|perl/(blib|examples)|po-docs|tests|test-data)/' | \
 	grep -v -E '/((guestfs|rc)_protocol\.c)$$' | \
 	grep -v -E '^python/utils\.c$$' | \
-	LC_ALL=C sort > po/POTFILES
+	LC_ALL=C sort > $@-t
+	mv $@-t $@
+
+po/POTFILES-ml: configure.ac
+	rm -f $@ $@-t
 	cd $(srcdir); \
 	find builder customize dib get-kernel mllib resize sparsify sysprep v2v -name '*.ml' | \
-	LC_ALL=C sort > po/POTFILES-ml
+	LC_ALL=C sort > $@-t
+	mv $@-t $@
 
 # Try to stop people using 'make install' without 'DESTDIR'.
 install:
@@ -305,7 +337,7 @@ install:
 	else \
 	    echo "***"; \
 	    echo "*** Using 'make install' is usually a very bad idea."; \
-	    echo "*** Use the './run' script instead - see the README."; \
+	    echo "*** Use the './run' script instead - see the guestfs-building(1) man page."; \
 	    echo "***"; \
 	    echo "*** You can override this by setting REALLY_INSTALL=yes, but don't do that."; \
 	    echo "***"; \
@@ -317,12 +349,14 @@ installcheck-local: installcheck.sh
 	$(builddir)/installcheck.sh
 
 # NB. podwrapper is an internal tool, so the man page mustn't be installed.
-noinst_MANS = podwrapper.1
+# It should be noinst_MANS but that doesn't work.
+noinst_DATA = podwrapper.1
 podwrapper.1: podwrapper.pl
 	$(PODWRAPPER) \
 	  --section 1 \
 	  --man $@-t \
 	  --license GPLv2+ \
+	  --warning safe \
 	  $<
 	mv $@-t $@
 
@@ -491,7 +525,7 @@ maintainer-commit:
 # Tag HEAD with current version (only for maintainer).
 
 maintainer-tag:
-	git tag -a $(VERSION) -m "Version $(VERSION) ($(BRANCH_TYPE))" -f
+	git tag -a "v$(VERSION)" -m "Version $(VERSION) ($(BRANCH_TYPE))" -f
 
 # Maintainer only: check EXTRA_DIST rule is complete.
 # (Note you must have done 'make dist')
@@ -533,7 +567,6 @@ help:
 	@echo
 	@echo "make installcheck                 Test installed libguestfs packages."
 	@echo
-	@echo "make syntax-check -j1 -k          Check syntax and style problems in the code."
 	@echo "make print-subdirs                Print subdirectories."
 	@echo
 	@echo "make install                      Install everything."

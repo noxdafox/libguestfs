@@ -16,7 +16,9 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
-/* Kernel-driven configuration, non-interactive. */
+/**
+ * Kernel-driven, non-interactive configuration of virt-p2v.
+ */
 
 #include <config.h>
 
@@ -26,6 +28,7 @@
 #include <inttypes.h>
 #include <unistd.h>
 #include <errno.h>
+#include <error.h>
 #include <assert.h>
 #include <locale.h>
 #include <libintl.h>
@@ -38,26 +41,25 @@ static void notify_ui_callback (int type, const char *data);
 static void run_command (int verbose, const char *stage, const char *command);
 
 void
-kernel_configuration (struct config *config, char **cmdline, int cmdline_source)
+update_config_from_kernel_cmdline (struct config *config, char **cmdline)
 {
   const char *p;
 
-  p = get_cmdline_key (cmdline, "p2v.pre");
+  p = get_cmdline_key (cmdline, "p2v.debug");
   if (p)
-    run_command (config->verbose, "p2v.pre", p);
+    config->verbose = 1;
 
   p = get_cmdline_key (cmdline, "p2v.server");
-  assert (p); /* checked by caller */
-  free (config->server);
-  config->server = strdup (p);
+  if (p) {
+    free (config->server);
+    config->server = strdup (p);
+  }
 
   p = get_cmdline_key (cmdline, "p2v.port");
   if (p) {
-    if (sscanf (p, "%d", &config->port) != 1) {
-      fprintf (stderr, "%s: cannot parse p2v.port from kernel command line",
-               guestfs_int_program_name);
-      exit (EXIT_FAILURE);
-    }
+    if (sscanf (p, "%d", &config->port) != 1)
+      error (EXIT_FAILURE, 0,
+             "cannot parse p2v.port from kernel command line");
   }
 
   p = get_cmdline_key (cmdline, "p2v.username");
@@ -83,21 +85,6 @@ kernel_configuration (struct config *config, char **cmdline, int cmdline_source)
   if (p)
     config->sudo = 1;
 
-  /* We should now be able to connect and interrogate virt-v2v
-   * on the conversion server.
-   */
-  p = get_cmdline_key (cmdline, "p2v.skip_test_connection");
-  if (!p) {
-    wait_network_online (config);
-    if (test_connection (config) == -1) {
-      const char *err = get_ssh_error ();
-
-      fprintf (stderr, "%s: error opening control connection to %s:%d: %s\n",
-               guestfs_int_program_name, config->server, config->port, err);
-      exit (EXIT_FAILURE);
-    }
-  }
-
   p = get_cmdline_key (cmdline, "p2v.name");
   if (p) {
     free (config->guestname);
@@ -106,22 +93,18 @@ kernel_configuration (struct config *config, char **cmdline, int cmdline_source)
 
   p = get_cmdline_key (cmdline, "p2v.vcpus");
   if (p) {
-    if (sscanf (p, "%d", &config->vcpus) != 1) {
-      fprintf (stderr, "%s: cannot parse p2v.vcpus from kernel command line\n",
-               guestfs_int_program_name);
-      exit (EXIT_FAILURE);
-    }
+    if (sscanf (p, "%d", &config->vcpus) != 1)
+      error (EXIT_FAILURE, 0,
+             "cannot parse p2v.vcpus from kernel command line");
   }
 
   p = get_cmdline_key (cmdline, "p2v.memory");
   if (p) {
     char mem_code;
 
-    if (sscanf (p, "%" SCNu64 "%c", &config->memory, &mem_code) != 2) {
-      fprintf (stderr, "%s: cannot parse p2v.memory from kernel command line\n",
-               guestfs_int_program_name);
-      exit (EXIT_FAILURE);
-    }
+    if (sscanf (p, "%" SCNu64 "%c", &config->memory, &mem_code) != 2)
+      error (EXIT_FAILURE, 0,
+             "cannot parse p2v.memory from kernel command line");
     config->memory *= 1024;
     if (mem_code == 'M' || mem_code == 'm'
         || mem_code == 'G' || mem_code == 'g')
@@ -129,11 +112,9 @@ kernel_configuration (struct config *config, char **cmdline, int cmdline_source)
     if (mem_code == 'G' || mem_code == 'g')
       config->memory *= 1024;
     if (mem_code != 'M' && mem_code != 'm'
-        && mem_code != 'G' && mem_code != 'g') {
-      fprintf (stderr, "%s: p2v.memory on kernel command line must be followed by 'G' or 'M'\n",
-               guestfs_int_program_name);
-      exit (EXIT_FAILURE);
-    }
+        && mem_code != 'G' && mem_code != 'g')
+      error (EXIT_FAILURE, 0,
+             "p2v.memory on kernel command line must be followed by 'G' or 'M'");
   }
 
   p = get_cmdline_key (cmdline, "p2v.disks");
@@ -207,21 +188,46 @@ kernel_configuration (struct config *config, char **cmdline, int cmdline_source)
     config->output_storage = strdup (p);
   }
 
-  /* Undocumented command line tool used for testing command line parsing. */
+  /* Undocumented command line parameter used for testing command line
+   * parsing.
+   */
   p = get_cmdline_key (cmdline, "p2v.dump_config_and_exit");
   if (p) {
     print_config (config, stdout);
     exit (EXIT_SUCCESS);
   }
+}
+
+/* Perform conversion using the kernel method. */
+void
+kernel_conversion (struct config *config, char **cmdline, int cmdline_source)
+{
+  const char *p;
+
+  /* Pre-conversion command. */
+  p = get_cmdline_key (cmdline, "p2v.pre");
+  if (p)
+    run_command (config->verbose, "p2v.pre", p);
+
+  /* Connect to and interrogate virt-v2v on the conversion server. */
+  p = get_cmdline_key (cmdline, "p2v.skip_test_connection");
+  if (!p) {
+    wait_network_online (config);
+    if (test_connection (config) == -1) {
+      const char *err = get_ssh_error ();
+
+      error (EXIT_FAILURE, 0,
+             "error opening control connection to %s:%d: %s",
+             config->server, config->port, err);
+    }
+  }
 
   /* Some disks must have been specified for conversion. */
-  if (config->disks == NULL || guestfs_int_count_strings (config->disks) == 0) {
-    fprintf (stderr, "%s: error: no non-removable disks were discovered on this machine.\n",
-             guestfs_int_program_name);
-    fprintf (stderr, "virt-p2v looked in /sys/block and in p2v.disks on the kernel command line.\n");
-    fprintf (stderr, "This is a fatal error and virt-p2v cannot continue.\n");
-    exit (EXIT_FAILURE);
-  }
+  if (config->disks == NULL || guestfs_int_count_strings (config->disks) == 0)
+    error (EXIT_FAILURE, 0,
+           "no non-removable disks were discovered on this machine.\n"
+           "virt-p2v looked in /sys/block and in p2v.disks on the kernel command line.\n"
+           "This is a fatal error and virt-p2v cannot continue.");
 
   /* Perform the conversion in text mode. */
   if (start_conversion (config, notify_ui_callback) == -1) {
@@ -282,13 +288,9 @@ run_command (int verbose, const char *stage, const char *command)
   }
 
   r = system (command);
-  if (r == -1) {
-    perror ("system");
-    exit (EXIT_FAILURE);
-  }
-  if ((WIFEXITED (r) && WEXITSTATUS (r) != 0) || !WIFEXITED (r)) {
-    fprintf (stderr, "%s: %s: unexpected failure of external command\n",
-             guestfs_int_program_name, stage);
-    exit (EXIT_FAILURE);
-  }
+  if (r == -1)
+    error (EXIT_FAILURE, errno, "system: %s", command);
+  if ((WIFEXITED (r) && WEXITSTATUS (r) != 0) || !WIFEXITED (r))
+    error (EXIT_FAILURE, 0,
+           "%s: unexpected failure of external command", stage);
 }

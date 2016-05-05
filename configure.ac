@@ -20,13 +20,13 @@
 # freeform string.
 m4_define([libguestfs_major],   [1])
 m4_define([libguestfs_minor],   [33])
-m4_define([libguestfs_release], [16])
+m4_define([libguestfs_release], [27])
 
 AC_INIT([libguestfs],libguestfs_major.libguestfs_minor.libguestfs_release)
 
 dnl The date that the above version was released.  This is used in
 dnl the website 'index.html' file.
-AC_SUBST([RELEASE_DATE], [2016-03-24])
+AC_SUBST([RELEASE_DATE], [2016-05-04])
 
 AC_CONFIG_AUX_DIR([build-aux])
 AC_REQUIRE_AUX_FILE([guestfs-test-driver])
@@ -124,10 +124,8 @@ m4_include([m4/guestfs_gobject.m4])
 dnl Bash completion.
 m4_include([m4/guestfs_bash_completion.m4])
 
-dnl Replace libtool with a wrapper that clobbers dependency_libs in *.la files
-dnl http://lists.fedoraproject.org/pipermail/devel/2010-November/146343.html
-LIBTOOL='bash $(top_srcdir)/libtool-kill-dependency_libs.sh $(top_builddir)/libtool'
-AC_SUBST([LIBTOOL])
+dnl Miscellaneous configuration that doesn't fit anywhere else.
+m4_include([m4/guestfs_misc.m4])
 
 dnl Work around autoconf's lack of expanded variables.
 eval my_sysconfdir="\"[$]sysconfdir\""
@@ -285,6 +283,10 @@ AC_CONFIG_FILES([Makefile
                  tests/xfs/Makefile
                  tests/xml/Makefile
                  tools/Makefile
+                 utils/boot-analysis/Makefile
+                 utils/boot-benchmark/Makefile
+                 utils/qemu-boot/Makefile
+                 utils/qemu-speed-test/Makefile
                  v2v/Makefile
                  v2v/test-harness/Makefile
                  v2v/test-harness/META

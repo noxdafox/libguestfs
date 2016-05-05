@@ -81,9 +81,14 @@ let qemu_supports_sound_card = function
   | Types.USBAudio
     -> true
 
-external ovmf_i386_firmware : unit -> (string * string) list = "v2v_utils_ovmf_i386_firmware"
-external ovmf_x86_64_firmware : unit -> (string * string) list = "v2v_utils_ovmf_x86_64_firmware"
-external aavmf_firmware : unit -> (string * string) list = "v2v_utils_aavmf_firmware"
+type uefi_firmware = {
+  code : string;       (* code file *)
+  vars : string;       (* vars template file *)
+}
+
+external ovmf_i386_firmware : unit -> uefi_firmware list = "v2v_utils_ovmf_i386_firmware"
+external ovmf_x86_64_firmware : unit -> uefi_firmware list = "v2v_utils_ovmf_x86_64_firmware"
+external aavmf_firmware : unit -> uefi_firmware list = "v2v_utils_aavmf_firmware"
 
 (* Find the UEFI firmware. *)
 let find_uefi_firmware guest_arch =
@@ -99,7 +104,7 @@ let find_uefi_firmware guest_arch =
   let rec loop = function
     | [] ->
        error (f_"cannot find firmware for UEFI guests.\n\nYou probably need to install OVMF, or Gerd's firmware repo (https://www.kraxel.org/repos/), or AAVMF (if using aarch64)")
-    | ((code, vars_template) as ret) :: rest ->
+    | ({ code = code; vars = vars_template } as ret) :: rest ->
        if Sys.file_exists code && Sys.file_exists vars_template then ret
        else loop rest
   in
@@ -124,3 +129,22 @@ let remove_duplicates xs =
     | x :: xs -> Hashtbl.add h x true; x :: loop xs
   in
   loop xs
+
+let du filename =
+  (* There's no OCaml binding for st_blocks, so run coreutils 'du'. *)
+  let cmd =
+    sprintf "du --block-size=1 %s | awk '{print $1}'" (quote filename) in
+  (* XXX This can call error and so exit, but it would be preferable
+   * to raise an exception here.
+   *)
+  let lines = external_command cmd in
+  match lines with
+  | line::_ -> Int64.of_string line
+  | [] -> invalid_arg filename
+
+(* The following functions are only exported for unit tests. *)
+module UNIT_TESTS = struct
+  let ovmf_i386_firmware = ovmf_i386_firmware
+  let ovmf_x86_64_firmware = ovmf_x86_64_firmware
+  let aavmf_firmware = aavmf_firmware
+end

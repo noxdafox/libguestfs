@@ -16,45 +16,7 @@
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
-/* Trace and analyze the appliance boot process to find out which
- * steps are taking the most time.  It is not part of the standard
- * tests.
- *
- * This needs to be run on a quiet machine, so that other processes
- * disturb the timing as little as possible.  The program is
- * completely safe to run at any time.  It doesn't read or write any
- * external files, and it doesn't require root.
- *
- * You can run it from the build directory like this:
- *
- *   make
- *   make -C tests/qemu boot-analysis
- *   ./run tests/qemu/boot-analysis
- *
- * The way it works is roughly like this:
- *
- * We create a libguestfs handle and register callback handlers so we
- * can see appliance messages, trace events and so on.
- *
- * We then launch the handle and shut it down as quickly as possible.
- *
- * While the handle is running, events (seen by the callback handlers)
- * are written verbatim into an in-memory buffer, with timestamps.
- *
- * Afterwards we analyze the result using regular expressions to try
- * to identify a "timeline" for the handle (eg. at what time did the
- * BIOS hand control to the kernel).  This analysis is done in
- * 'boot-analysis-timeline.c'.
- *
- * The whole process is repeated across a few runs, and the final
- * timeline (including statistical analysis of the variation between
- * runs) gets printed.
- *
- * The program is very sensitive to the specific messages printed by
- * BIOS/kernel/supermin/userspace, so it won't work on non-x86, and it
- * will require periodic adjustment of the regular expressions in
- * order to keep things up to date.
- */
+/* See instructions in boot-analysis.1 */
 
 #include <config.h>
 
@@ -64,6 +26,7 @@
 #include <inttypes.h>
 #include <string.h>
 #include <unistd.h>
+#include <fcntl.h>
 #include <getopt.h>
 #include <limits.h>
 #include <time.h>
@@ -71,23 +34,21 @@
 #include <error.h>
 #include <ctype.h>
 #include <assert.h>
+#include <sys/types.h>
+#include <sys/wait.h>
 #include <math.h>
-
-#include "ignore-value.h"
+#include <pthread.h>
 
 #include "guestfs.h"
 #include "guestfs-internal-frontend.h"
 
 #include "boot-analysis.h"
+#include "boot-analysis-utils.h"
 
 /* Activities taking longer than this % of the total time, except
  * those flagged as LONG_ACTIVITY, are highlighted in red.
  */
 #define WARNING_THRESHOLD 1.0
-
-struct pass_data pass_data[NR_TEST_PASSES];
-size_t nr_activities;
-struct activity *activities;
 
 static const char *append = NULL;
 static int force_colour = 0;
@@ -95,18 +56,31 @@ static int memsize = 0;
 static int smp = 1;
 static int verbose = 0;
 
+static int libvirt_pipe[2] = { -1, -1 };
+static ssize_t libvirt_pass = -1;
+
+/* Because there is a separate thread which collects libvirt log data,
+ * we must protect the pass_data struct with a mutex.  This only
+ * applies during the data collection passes.
+ */
+static pthread_mutex_t pass_data_lock = PTHREAD_MUTEX_INITIALIZER;
+struct pass_data pass_data[NR_TEST_PASSES];
+
+size_t nr_activities;
+struct activity *activities;
+
 static void run_test (void);
-static void get_time (struct timespec *ts);
-static int64_t timespec_diff (const struct timespec *x, const struct timespec *y);
 static struct event *add_event (struct pass_data *, uint64_t source);
 static guestfs_h *create_handle (void);
 static void set_up_event_handlers (guestfs_h *g, size_t pass);
+static void libvirt_log_hack (int argc, char **argv);
+static void start_libvirt_thread (size_t pass);
+static void stop_libvirt_thread (void);
 static void add_drive (guestfs_h *g);
 static void check_pass_data (void);
 static void dump_pass_data (void);
 static void analyze_timeline (void);
 static void dump_timeline (void);
-static void print_info (void);
 static void print_analysis (void);
 static void print_longest_to_shortest (void);
 static void free_pass_data (void);
@@ -156,6 +130,8 @@ main (int argc, char *argv[])
     { "color", 0, 0, 0 },
     { "colour", 0, 0, 0 },
     { "memsize", 1, 0, 'm' },
+    { "libvirt-pipe-0", 1, 0, 0 }, /* see libvirt_log_hack */
+    { "libvirt-pipe-1", 1, 0, 0 },
     { "smp", 1, 0, 0 },
     { "verbose", 0, 0, 'v' },
     { 0, 0, 0, 0 }
@@ -177,12 +153,22 @@ main (int argc, char *argv[])
         force_colour = 1;
         break;
       }
+      else if (STREQ (long_options[option_index].name, "libvirt-pipe-0")) {
+        if (sscanf (optarg, "%d", &libvirt_pipe[0]) != 1)
+          error (EXIT_FAILURE, 0,
+                 "could not parse libvirt-pipe-0 parameter: %s", optarg);
+        break;
+      }
+      else if (STREQ (long_options[option_index].name, "libvirt-pipe-1")) {
+        if (sscanf (optarg, "%d", &libvirt_pipe[1]) != 1)
+          error (EXIT_FAILURE, 0,
+                 "could not parse libvirt-pipe-1 parameter: %s", optarg);
+        break;
+      }
       else if (STREQ (long_options[option_index].name, "smp")) {
-        if (sscanf (optarg, "%d", &smp) != 1) {
-          fprintf (stderr, "%s: could not parse smp parameter: %s\n",
-                   guestfs_int_program_name, optarg);
-          exit (EXIT_FAILURE);
-        }
+        if (sscanf (optarg, "%d", &smp) != 1)
+          error (EXIT_FAILURE, 0,
+                 "could not parse smp parameter: %s", optarg);
         break;
       }
       fprintf (stderr, "%s: unknown long option: %s (%d)\n",
@@ -209,8 +195,10 @@ main (int argc, char *argv[])
     }
   }
 
-  if (STRNEQ (host_cpu, "x86_64"))
-    fprintf (stderr, "WARNING: host_cpu != x86_64: This program may not work or give bogus results.\n");
+  libvirt_log_hack (argc, argv);
+
+  if (STRNEQ (host_cpu, "x86_64") && STRNEQ (host_cpu, "aarch64"))
+    fprintf (stderr, "WARNING: host_cpu != x86_64|aarch64: This program may not work or give bogus results.\n");
 
   run_test ();
 }
@@ -234,10 +222,12 @@ run_test (void)
   for (i = 0; i < NR_TEST_PASSES; ++i) {
     g = create_handle ();
     set_up_event_handlers (g, i);
+    start_libvirt_thread (i);
     add_drive (g);
     if (guestfs_launch (g) == -1)
       exit (EXIT_FAILURE);
     guestfs_close (g);
+    stop_libvirt_thread ();
 
     printf ("    pass %zu: %zu events collected in %" PRIi64 " ns\n",
             i+1, pass_data[i].nr_events, pass_data[i].elapsed_ns);
@@ -255,7 +245,9 @@ run_test (void)
     dump_timeline ();
 
   printf ("\n");
-  print_info ();
+  g = create_handle ();
+  test_info (g, NR_TEST_PASSES);
+  guestfs_close (g);
   printf ("\n");
   print_analysis ();
   printf ("\n");
@@ -267,26 +259,8 @@ run_test (void)
   free_final_timeline ();
 }
 
-static void
-get_time (struct timespec *ts)
-{
-  if (clock_gettime (CLOCK_REALTIME, ts) == -1)
-    error (EXIT_FAILURE, errno, "clock_gettime: CLOCK_REALTIME");
-}
-
-/* Computes Y - X, returning nanoseconds. */
-static int64_t
-timespec_diff (const struct timespec *x, const struct timespec *y)
-{
-  int64_t nsec;
-
-  nsec = (y->tv_sec - x->tv_sec) * UINT64_C(1000000000);
-  nsec += y->tv_nsec - x->tv_nsec;
-  return nsec;
-}
-
 static struct event *
-add_event (struct pass_data *data, uint64_t source)
+add_event_unlocked (struct pass_data *data, uint64_t source)
 {
   struct event *ret;
 
@@ -302,6 +276,17 @@ add_event (struct pass_data *data, uint64_t source)
   return ret;
 }
 
+static struct event *
+add_event (struct pass_data *data, uint64_t source)
+{
+  struct event *ret;
+
+  pthread_mutex_lock (&pass_data_lock);
+  ret = add_event_unlocked (data, source);
+  pthread_mutex_unlock (&pass_data_lock);
+  return ret;
+}
+
 /* Common function to create the handle and set various defaults. */
 static guestfs_h *
 create_handle (void)
@@ -311,14 +296,6 @@ create_handle (void)
 
   g = guestfs_create ();
   if (!g) error (EXIT_FAILURE, errno, "guestfs_create");
-
-  /* We always run these tests using LIBGUESTFS_BACKEND=direct.  It
-   * may be in future we need to test libvirt as well, in case
-   * performance issues are suspected there, but so far libvirt has
-   * not been a bottleneck.
-   */
-  if (guestfs_set_backend (g, "direct") == -1)
-    exit (EXIT_FAILURE);
 
   if (memsize != 0)
     if (guestfs_set_memsize (g, memsize) == -1)
@@ -618,6 +595,181 @@ set_up_event_handlers (guestfs_h *g, size_t pass)
   guestfs_set_trace (g, 1);
 }
 
+/* libvirt debugging sucks in a number of concrete ways:
+ *
+ * - you can't get a synchronous callback from a log message
+ * - you can't enable logging per handle (only globally
+ *   by setting environment variables)
+ * - you can't debug the daemon easily
+ * - it's very complex
+ * - it's very complex but not in ways that are practical or useful
+ *
+ * To get log messages at all, we need to create a pipe connected to a
+ * second thread, and when libvirt prints something to the pipe we log
+ * that.
+ *
+ * However that's not sufficient.  Because logging is only enabled
+ * when libvirt examines environment variables at the start of the
+ * program, we need to create the pipe and then fork+exec a new
+ * instance of the whole program with the pipe and environment
+ * variables set up.
+ */
+static int is_libvirt_backend (guestfs_h *g);
+static void *libvirt_log_thread (void *datavp);
+
+static void
+libvirt_log_hack (int argc, char **argv)
+{
+  guestfs_h *g;
+
+  g = guestfs_create ();
+  if (!is_libvirt_backend (g)) {
+    guestfs_close (g);
+    return;
+  }
+  guestfs_close (g);
+
+  /* Have we set up the pipes and environment and forked yet?  If not,
+   * do that first.
+   */
+  if (libvirt_pipe[0] == -1 || libvirt_pipe[1] == -1) {
+    char log_outputs[64];
+    char **new_argv;
+    char param1[64], param2[64];
+    size_t i;
+    pid_t pid;
+    int status;
+
+    /* Create the pipe.  NB: do NOT use O_CLOEXEC since we want to pass
+     * this pipe into a child process.
+     */
+    if (pipe (libvirt_pipe) == -1)
+      error (EXIT_FAILURE, 0, "pipe2");
+
+    /* Create the environment variables to enable logging in libvirt. */
+    setenv ("LIBVIRT_DEBUG", "1", 1);
+    //setenv ("LIBVIRT_LOG_FILTERS",
+    //        "1:qemu 1:securit 3:file 3:event 3:object 1:util", 1);
+    snprintf (log_outputs, sizeof log_outputs,
+              "1:file:/dev/fd/%d", libvirt_pipe[1]);
+    setenv ("LIBVIRT_LOG_OUTPUTS", log_outputs, 1);
+
+    /* Run self again. */
+    new_argv = malloc ((argc+3) * sizeof (char *));
+    if (new_argv == NULL)
+      error (EXIT_FAILURE, errno, "malloc");
+
+    for (i = 0; i < (size_t) argc; ++i)
+      new_argv[i] = argv[i];
+
+    snprintf (param1, sizeof param1, "--libvirt-pipe-0=%d", libvirt_pipe[0]);
+    new_argv[argc] = param1;
+    snprintf (param2, sizeof param2, "--libvirt-pipe-1=%d", libvirt_pipe[1]);
+    new_argv[argc+1] = param2;
+    new_argv[argc+2] = NULL;
+
+    pid = fork ();
+    if (pid == -1)
+      error (EXIT_FAILURE, errno, "fork");
+    if (pid == 0) {             /* Child process. */
+      execvp (argv[0], new_argv);
+      perror ("execvp");
+      _exit (EXIT_FAILURE);
+    }
+
+    if (waitpid (pid, &status, 0) == -1)
+      error (EXIT_FAILURE, errno, "waitpid");
+    if (WIFEXITED (status))
+      exit (WEXITSTATUS (status));
+    error (EXIT_FAILURE, 0, "unexpected exit status from process: %d", status);
+  }
+
+  /* If we reach this else clause, then we have forked.  Now we must
+   * create a thread to read events from the pipe.  This must be
+   * constantly reading from the pipe, otherwise we will deadlock.
+   * During the warm-up phase we end up throwing away messages.
+   */
+  else {
+    pthread_t thread;
+    pthread_attr_t attr;
+    int r;
+
+    r = pthread_attr_init (&attr);
+    if (r != 0)
+      error (EXIT_FAILURE, r, "pthread_attr_init");
+    r = pthread_attr_setdetachstate (&attr, PTHREAD_CREATE_DETACHED);
+    if (r != 0)
+      error (EXIT_FAILURE, r, "pthread_attr_setdetachstate");
+    r = pthread_create (&thread, &attr, libvirt_log_thread, NULL);
+    if (r != 0)
+      error (EXIT_FAILURE, r, "pthread_create");
+    pthread_attr_destroy (&attr);
+  }
+}
+
+static void
+start_libvirt_thread (size_t pass)
+{
+  /* In the non-libvirt case, this variable is ignored. */
+  pthread_mutex_lock (&pass_data_lock);
+  libvirt_pass = pass;
+  pthread_mutex_unlock (&pass_data_lock);
+}
+
+static void
+stop_libvirt_thread (void)
+{
+  /* In the non-libvirt case, this variable is ignored. */
+  pthread_mutex_lock (&pass_data_lock);
+  libvirt_pass = -1;
+  pthread_mutex_unlock (&pass_data_lock);
+}
+
+/* The separate "libvirt thread".  It loops reading debug messages
+ * printed by libvirt and adds them to the pass_data.
+ */
+static void *
+libvirt_log_thread (void *arg)
+{
+  struct event *event;
+  CLEANUP_FREE char *buf = NULL;
+  ssize_t r;
+
+  buf = malloc (BUFSIZ);
+  if (buf == NULL)
+    error (EXIT_FAILURE, errno, "malloc");
+
+  while ((r = read (libvirt_pipe[0], buf, BUFSIZ)) > 0) {
+    pthread_mutex_lock (&pass_data_lock);
+    if (libvirt_pass == -1) goto discard;
+    event =
+      add_event_unlocked (&pass_data[libvirt_pass], SOURCE_LIBVIRT);
+    event->message = strndup (buf, r);
+    if (event->message == NULL)
+      error (EXIT_FAILURE, errno, "strndup");
+  discard:
+    pthread_mutex_unlock (&pass_data_lock);
+  }
+
+  if (r == -1)
+    error (EXIT_FAILURE, errno, "libvirt_log_thread: read");
+
+  /* It's possible for the pipe to be closed (r == 0) if thread
+   * cancellation is delayed after the main thread exits, so just
+   * ignore that case and exit.
+   */
+  pthread_exit (NULL);
+}
+
+static int
+is_libvirt_backend (guestfs_h *g)
+{
+  CLEANUP_FREE char *backend = guestfs_get_backend (g);
+
+  return backend &&
+    (STREQ (backend, "libvirt") || STRPREFIX (backend, "libvirt:"));
+}
+
 /* Sanity check the collected events. */
 static void
 check_pass_data (void)
@@ -642,7 +794,8 @@ check_pass_data (void)
       assert (pass_data[i].events[j].source != 0);
       message = pass_data[i].events[j].message;
       assert (message != NULL);
-      assert (strchr (message, '\n') == NULL);
+      assert (pass_data[i].events[j].source != GUESTFS_EVENT_APPLIANCE ||
+              strchr (message, '\n') == NULL);
       len = strlen (message);
       assert (len == 0 || message[len-1] != '\r');
     }
@@ -672,16 +825,41 @@ dump_pass_data (void)
     printf ("    number of events collected %zu\n", pass_data[i].nr_events);
     printf ("    elapsed time %" PRIi64 " ns\n", pass_data[i].elapsed_ns);
     for (j = 0; j < pass_data[i].nr_events; ++j) {
-      int64_t ns;
-      CLEANUP_FREE char *event_str = NULL;
+      int64_t ns, diff_ns;
+      CLEANUP_FREE char *source_str = NULL;
 
       ns = timespec_diff (&pass_data[i].start_t, &pass_data[i].events[j].t);
-      event_str = guestfs_event_to_string (pass_data[i].events[j].source);
-      printf ("    #%zu: +%" PRIi64 " [%s] \"", j, ns, event_str);
+      source_str = source_to_string (pass_data[i].events[j].source);
+      printf ("    %.1fms ", ns / 1000000.0);
+      if (j > 0) {
+	diff_ns = timespec_diff (&pass_data[i].events[j-1].t,
+				 &pass_data[i].events[j].t);
+	printf ("(+%.1f) ", diff_ns / 1000000.0);
+      }
+      printf ("[%s] \"", source_str);
       print_escaped_string (pass_data[i].events[j].message);
       printf ("\"\n");
     }
   }
+}
+
+/* Convert source to a printable string.  The caller must free the
+ * returned string.
+ */
+char *
+source_to_string (uint64_t source)
+{
+  char *ret;
+
+  if (source == SOURCE_LIBVIRT) {
+    ret = strdup ("libvirt");
+    if (ret == NULL)
+      error (EXIT_FAILURE, errno, "strdup");
+  }
+  else
+    ret = guestfs_event_to_string (source);
+
+  return ret;                   /* caller frees */
 }
 
 int
@@ -842,45 +1020,14 @@ dump_timeline (void)
   }
 }
 
-/* Print some information that will allow us to determine the test
- * system when reviewing the results in future.
- */
-static void
-print_info (void)
-{
-  size_t i;
-
-  printf ("%s %s\n", PACKAGE_NAME, PACKAGE_VERSION_FULL);
-
-  printf ("Host:\n");
-  ignore_value (system ("uname -a"));
-  ignore_value (system ("grep '^model name' /proc/cpuinfo | head -1"));
-
-  /* We can dig some information about qemu and the appliance out of
-   * the events.
-   */
-  printf ("Appliance:\n");
-  assert (NR_TEST_PASSES > 0);
-  for (i = 0; i < pass_data[0].nr_events; ++i) {
-    const char *message = pass_data[0].events[i].message;
-    if (strstr (message, "qemu version") ||
-        (strstr (message, "SeaBIOS") && strstr (message, "version")) ||
-        strstr (message, "Linux version") ||
-        (strstr (message, "supermin") && strstr (message, "starting up"))) {
-      print_escaped_string (message);
-      putchar ('\n');
-    }
-  }
-}
-
 static void
 print_activity (struct activity *activity)
 {
   if (activity->warning) ansi_red (); else ansi_green ();
   print_escaped_string (activity->name);
   ansi_restore ();
-  printf (" %1.6fs ±%.1fms ",
-          activity->mean / 1000000000, activity->sd / 1000000);
+  printf (" %.1fms ±%.1fms ",
+          activity->mean / 1000000, activity->sd / 1000000);
   if (activity->warning) ansi_red (); else ansi_green ();
   printf ("(%.1f%%) ", activity->percent);
   ansi_restore ();
@@ -925,7 +1072,7 @@ print_analysis (void)
 
     /* Draw a spacer line, but only if last_t -> t is a large jump. */
     if (t - last_t >= 1000000 /* ns */) {
-      printf ("           ");
+      printf ("          ");
       ansi_magenta ();
       for (j = 0; j < last_free_column; ++j) {
         if (columns[j] >= 0 &&
@@ -965,7 +1112,7 @@ print_analysis (void)
 
     /* Draw the line. */
     ansi_blue ();
-    printf ("%1.6fs: ", t / 1000000000);
+    printf ("%6.1fms: ", t / 1000000);
 
     ansi_magenta ();
     for (j = 0; j < last_free_column; ++j) {

@@ -118,6 +118,7 @@ struct backend_libvirt_data {
   char *network_bridge;
   char name[DOMAIN_NAME_LEN];   /* random name */
   bool is_kvm;                  /* false = qemu, true = kvm (from capabilities)*/
+  unsigned long libvirt_version; /* libvirt version */
   unsigned long qemu_version;   /* qemu version (from libvirt) */
   struct secret *secrets;       /* list of secrets */
   size_t nr_secrets;
@@ -235,7 +236,6 @@ launch_libvirt (guestfs_h *g, void *datav, const char *libvirt_uri)
 {
   struct backend_libvirt_data *data = datav;
   int daemon_accept_sock = -1, console_sock = -1;
-  unsigned long version;
   virConnectPtr conn = NULL;
   virDomainPtr dom = NULL;
   CLEANUP_FREE char *capabilities_xml = NULL;
@@ -262,11 +262,13 @@ launch_libvirt (guestfs_h *g, void *datav, const char *libvirt_uri)
     return -1;
   }
 
-  virGetVersion (&version, NULL, NULL);
+  virGetVersion (&data->libvirt_version, NULL, NULL);
   debug (g, "libvirt version = %lu (%lu.%lu.%lu)",
-         version,
-         version / 1000000UL, version / 1000UL % 1000UL, version % 1000UL);
-  if (version < MIN_LIBVIRT_VERSION) {
+         data->libvirt_version,
+         data->libvirt_version / 1000000UL,
+         data->libvirt_version / 1000UL % 1000UL,
+         data->libvirt_version % 1000UL);
+  if (data->libvirt_version < MIN_LIBVIRT_VERSION) {
     error (g, _("you must have libvirt >= %d.%d.%d "
                 "to use the 'libvirt' backend"),
            MIN_LIBVIRT_MAJOR, MIN_LIBVIRT_MINOR, MIN_LIBVIRT_MICRO);
@@ -1166,9 +1168,11 @@ construct_libvirt_xml_boot (guestfs_h *g,
     } end_element ();
 
 #if defined(__i386__) || defined(__x86_64__)
-    start_element ("bios") {
-      attribute ("useserial", "yes");
-    } end_element ();
+    if (g->verbose) {
+      start_element ("bios") {
+        attribute ("useserial", "yes");
+      } end_element ();
+    }
 #endif
 
   } end_element ();
@@ -1251,19 +1255,19 @@ construct_libvirt_xml_devices (guestfs_h *g,
     }
 #endif
 
-    /* Add a random number generator (backend for virtio-rng). */
-    start_element ("rng") {
-      attribute ("model", "virtio");
-      start_element ("backend") {
-        attribute ("model", "random");
-        /* It'd be nice to do this, but libvirt says:
-         *   file '/dev/urandom' is not a supported random source
-         * Let libvirt pick /dev/random automatically instead.
-         * See also: https://bugzilla.redhat.com/show_bug.cgi?id=1074464
-         */
-        //string ("/dev/urandom");
+    /* Add a random number generator (backend for virtio-rng).  This
+     * requires Cole Robinson's patch to permit /dev/urandom to be
+     * used, which was added in libvirt 1.3.4.
+     */
+    if (params->data->libvirt_version >= 1003004) {
+      start_element ("rng") {
+        attribute ("model", "virtio");
+        start_element ("backend") {
+          attribute ("model", "random");
+          string ("/dev/urandom");
+        } end_element ();
       } end_element ();
-    } end_element ();
+    }
 
     /* virtio-scsi controller. */
     start_element ("controller") {

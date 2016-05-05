@@ -43,13 +43,34 @@ val kvm_arch : string -> string
 val qemu_supports_sound_card : Types.source_sound_model -> bool
 (** Does qemu support the given sound card? *)
 
-val find_uefi_firmware : string -> string * string
-(** Find the UEFI firmware for the guest architecture.  Returns a
-    pair [(code_file, vars_file)].  This cannot return an error, it
-    calls [error] and fails instead. *)
+type uefi_firmware = {
+  code : string;       (** code file *)
+  vars : string;       (** vars template file *)
+}
+
+val find_uefi_firmware : string -> uefi_firmware
+(** Find the UEFI firmware for the guest architecture.
+    This cannot return an error, it calls [error] and fails instead. *)
 
 val compare_app2_versions : Guestfs.application2 -> Guestfs.application2 -> int
 (** Compare two app versions. *)
 
 val remove_duplicates : 'a list -> 'a list
 (** Remove duplicates from a list. *)
+
+val du : string -> int64
+(** Return the true size of a file in bytes, including any wasted
+    space caused by internal fragmentation (the overhead of using
+    blocks).
+
+    This can raise either [Failure] or [Invalid_argument] in case
+    of errors. *)
+
+(**/**)
+
+(* The following functions are only exported for unit tests. *)
+module UNIT_TESTS : sig
+  val ovmf_i386_firmware : unit -> uefi_firmware list
+  val ovmf_x86_64_firmware : unit -> uefi_firmware list
+  val aavmf_firmware : unit -> uefi_firmware list
+end

@@ -32,6 +32,7 @@
 #include <getopt.h>
 #include <limits.h>
 #include <errno.h>
+#include <error.h>
 #include <pthread.h>
 
 #include "guestfs.h"
@@ -121,11 +122,10 @@ main (int argc, char *argv[])
             log_file_size += 64;
         }
       }
-      else {
-        fprintf (stderr, "%s: unknown long option: %s (%d)\n",
-                 guestfs_int_program_name, long_options[option_index].name, option_index);
-        exit (EXIT_FAILURE);
-      }
+      else
+        error (EXIT_FAILURE, 0,
+               "unknown long option: %s (%d)",
+               long_options[option_index].name, option_index);
       break;
 
     case 'i':
@@ -133,18 +133,13 @@ main (int argc, char *argv[])
       break;
 
     case 'n':
-      if (sscanf (optarg, "%zu", &n) != 1 || n == 0) {
-        fprintf (stderr, "%s: -n option not numeric and greater than 0\n",
-                 guestfs_int_program_name);
-        exit (EXIT_FAILURE);
-      }
+      if (sscanf (optarg, "%zu", &n) != 1 || n == 0)
+        error (EXIT_FAILURE, 0, "-n option not numeric and greater than 0");
       break;
 
     case 'P':
-      if (sscanf (optarg, "%zu", &P) != 1) {
-        fprintf (stderr, "%s: -P option not numeric\n", guestfs_int_program_name);
-        exit (EXIT_FAILURE);
-      }
+      if (sscanf (optarg, "%zu", &P) != 1)
+        error (EXIT_FAILURE, 0, "-P option not numeric");
       break;
 
     case 'v':
@@ -163,18 +158,13 @@ main (int argc, char *argv[])
     }
   }
 
-  if (n == 0) {
-    fprintf (stderr,
-             "%s: must specify number of processes to run (-n option)\n",
-             guestfs_int_program_name);
-    exit (EXIT_FAILURE);
-  }
+  if (n == 0)
+    error (EXIT_FAILURE, 0,
+           "must specify number of processes to run (-n option)");
 
-  if (optind != argc) {
-    fprintf (stderr, "%s: extra arguments found on the command line\n",
-             guestfs_int_program_name);
-    exit (EXIT_FAILURE);
-  }
+  if (optind != argc)
+    error (EXIT_FAILURE, 0,
+           "extra arguments found on the command line");
 
   /* Calculate the number of threads to use. */
   if (P > 0)
@@ -197,20 +187,15 @@ run_test (size_t P)
 
   thread_data = malloc (sizeof (struct thread_data) * P);
   threads = malloc (sizeof (pthread_t) * P);
-  if (thread_data == NULL || threads == NULL) {
-    perror ("malloc");
-    exit (EXIT_FAILURE);
-  }
+  if (thread_data == NULL || threads == NULL)
+    error (EXIT_FAILURE, errno, "malloc");
 
   /* Start the worker threads. */
   for (i = 0; i < P; ++i) {
     thread_data[i].thread_num = i;
     err = pthread_create (&threads[i], NULL, start_thread, &thread_data[i]);
-    if (err != 0) {
-      fprintf (stderr, "%s: pthread_create[%zu]: %s\n",
-               guestfs_int_program_name, i, strerror (err));
-      exit (EXIT_FAILURE);
-    }
+    if (err != 0)
+      error (EXIT_FAILURE, err, "pthread_create[%zu]\n", i);
   }
 
   /* Wait for the threads to exit. */
