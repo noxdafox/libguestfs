@@ -23,29 +23,42 @@ ifelse(REDHAT,1,
   dnl Used by the virt-p2v binary.
   pcre
   libxml2
-  gtk2
+  gtk`'GTK_VERSION
 
   dnl Run as external programs by the p2v binary.
   /usr/bin/ssh
   /usr/bin/qemu-nbd
   curl
+  ethtool
 
   dnl The hwdata package contains PCI IDs, used by virt-p2v to display
   dnl network vendor information (RHBZ#855059).
   hwdata
 
+  dnl Useful disk and diagnostic utilities.
+  pciutils
+  hdparm
+  smartmontools
+  util-linux
+
   dnl X11 environment
+  xterm
   /usr/bin/xinit
   /usr/bin/Xorg
   xorg-x11-drivers
   xorg-x11-fonts-Type1
+  dejavu-sans-fonts
+  dejavu-sans-mono-fonts
   mesa-dri-drivers
   metacity
 
   NetworkManager
   nm-connection-editor
   network-manager-applet
-  dbus-x11        dnl required by nm-applet, but not a dependency in Fedora
+  dnl dbus is required by nm-applet, but not a dependency in Fedora
+  dbus-x11
+  dnl sysadmins prefer ifconfig
+  net-tools
 
   dnl RHBZ#1157679
   @hardware-support
@@ -54,52 +67,77 @@ ifelse(REDHAT,1,
 ifelse(DEBIAN,1,
   libpcre3
   libxml2
-  libgtk2.0-0
+  libgtk`'GTK_VERSION`'.0-0
   openssh-client
   qemu-utils
   curl
+  ethtool
   hwdata
+  pciutils
+  hdparm
+  smartmontools
+  util-linux
+  xterm
   xorg
   xserver-xorg-video-all
+  fonts-dejavu
   metacity
   network-manager
   network-manager-gnome
   network-manager-applet
   dbus-x11
+  net-tools
 )
 
 ifelse(ARCHLINUX,1,
   pcre
   libxml2
-  gtk2
+  gtk`'GTK_VERSION
   openssh
   qemu
   curl
+  ethtool
   hwdata
+  pciutils
+  hdparm
+  smartmontools
+  util-linux
+  xterm
   xorg-xinit
   xorg-server
   xf86-video-*
+  ttf-dejavu
   metacity
   NetworkManager
   nm-connection-editor
   network-manager-applet
   dbus-x11
+  net-tools
 )
 
 ifelse(SUSE,1,
   pcre
   libxml2
-  gtk2
-  /usr/bin/ssh
-  /usr/bin/qemu-nbd
+  gtk`'GTK_VERSION
+  qemu-tools
+  openssh
   curl
+  ethtool
   hwdata
-  /usr/bin/xinit
-  /usr/bin/Xorg
+  pciutils
+  hdparm
+  smartmontools
+  util-linux
+  xterm
+  xinit
+  xorg-x11-server
   xf86-video-*
-  metacity
+  dejavu-fonts
   NetworkManager
-  nm-connection-editor
-  network-manager-applet
-  dbus-x11
+  xf86-input-*
+  icewm-lite
+  dbus-1-x11
+  yast2-network
+  libyui-qt
+  SuSEfirewall2
 )

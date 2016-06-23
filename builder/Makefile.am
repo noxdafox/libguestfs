@@ -89,6 +89,7 @@ SOURCES_ML = \
 	builder.ml
 
 SOURCES_C = \
+	../mllib/dev_t-c.c \
 	../mllib/fsync-c.c \
 	../mllib/uri-c.c \
 	../mllib/mkdtemp-c.c \
@@ -131,9 +132,11 @@ virt_builder_CFLAGS = \
 	$(YAJL_CFLAGS)
 
 BOBJECTS = \
+	$(OCAML_BYTES_COMPAT_CMO) \
 	$(top_builddir)/mllib/libdir.cmo \
 	$(top_builddir)/mllib/guestfs_config.cmo \
 	$(top_builddir)/mllib/common_gettext.cmo \
+	$(top_builddir)/mllib/dev_t.cmo \
 	$(top_builddir)/mllib/common_utils.cmo \
 	$(top_builddir)/mllib/fsync.cmo \
 	$(top_builddir)/mllib/planner.cmo \
@@ -203,15 +206,6 @@ virt_builder_LINK = \
 	$(top_srcdir)/ocaml-link.sh -cclib '$(OCAMLCLIBS)' -- \
 	  $(OCAMLFIND) $(BEST) $(OCAMLFLAGS) $(OCAMLPACKAGES) $(OCAMLLINKFLAGS) \
 	  $(OBJECTS) -o $@
-
-.mli.cmi:
-	$(OCAMLFIND) ocamlc $(OCAMLFLAGS) $(OCAMLPACKAGES) -c $< -o $@
-.ml.cmo:
-	$(OCAMLFIND) ocamlc $(OCAMLFLAGS) $(OCAMLPACKAGES) -c $< -o $@
-if HAVE_OCAMLOPT
-.ml.cmx:
-	$(OCAMLFIND) ocamlopt $(OCAMLFLAGS) $(OCAMLPACKAGES) -c $< -o $@
-endif
 
 # Manual pages and HTML files for the website.
 

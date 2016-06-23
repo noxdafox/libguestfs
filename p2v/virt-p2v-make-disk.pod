@@ -129,6 +129,13 @@ See L</ADDING AN SSH IDENTITY> above.
 Write output to C<OUTPUT>, which can be a local file or block device.
 B<The existing contents of the device will be erased>.
 
+=item B<-v>
+
+=item B<--verbose>
+
+Enable verbose output.  Use this if you need to debug problems with
+the script or if you are filing a bug.
+
 =item B<-V>
 
 =item B<--version>
@@ -177,6 +184,7 @@ L</FILES> above).  If not set, a compiled-in location is used.
 
 L<virt-p2v(1)>,
 L<virt-p2v-make-kickstart(1)>,
+L<virt-p2v-make-kiwi(1)>,
 L<virt-v2v(1)>,
 L<http://libguestfs.org/>.
 

@@ -169,12 +169,12 @@ let le32_of_int i =
   let c1 = Int64.shift_right (i &^ 0xff00L) 8 in
   let c2 = Int64.shift_right (i &^ 0xff0000L) 16 in
   let c3 = Int64.shift_right (i &^ 0xff000000L) 24 in
-  let s = String.create 4 in
-  String.unsafe_set s 0 (Char.unsafe_chr (Int64.to_int c0));
-  String.unsafe_set s 1 (Char.unsafe_chr (Int64.to_int c1));
-  String.unsafe_set s 2 (Char.unsafe_chr (Int64.to_int c2));
-  String.unsafe_set s 3 (Char.unsafe_chr (Int64.to_int c3));
-  s
+  let b = Bytes.create 4 in
+  Bytes.unsafe_set b 0 (Char.unsafe_chr (Int64.to_int c0));
+  Bytes.unsafe_set b 1 (Char.unsafe_chr (Int64.to_int c1));
+  Bytes.unsafe_set b 2 (Char.unsafe_chr (Int64.to_int c2));
+  Bytes.unsafe_set b 3 (Char.unsafe_chr (Int64.to_int c3));
+  Bytes.to_string b
 
 let isdigit = function
   | '0'..'9' -> true
@@ -202,7 +202,7 @@ and _wrap chan indent column i len str =
         indent + (j-i) + 1
       )
       else column + (j-i) + 1 in
-    output chan str i (j-i);
+    output chan (Bytes.of_string str) i (j-i);
     match break with
     | WrapEOS -> ()
     | WrapSpace ->
@@ -295,27 +295,16 @@ let protect ~f ~finally =
   finally ();
   match r with Either ret -> ret | Or exn -> raise exn
 
-let istty chan =
-  Unix.isatty (Unix.descr_of_out_channel chan)
-
-(* ANSI terminal colours. *)
-let ansi_green ?(chan = stdout) () =
-  if istty chan then output_string chan "\x1b[0;32m"
-let ansi_red ?(chan = stdout) () =
-  if istty chan then output_string chan "\x1b[1;31m"
-let ansi_blue ?(chan = stdout) () =
-  if istty chan then output_string chan "\x1b[1;34m"
-let ansi_magenta ?(chan = stdout) () =
-  if istty chan then output_string chan "\x1b[1;35m"
-let ansi_restore ?(chan = stdout) () =
-  if istty chan then output_string chan "\x1b[0m"
-
 (* Program name. *)
 let prog = Filename.basename Sys.executable_name
 
-(* Stores the quiet (--quiet), trace (-x) and verbose (-v) flags in a
- * global variable.
+(* Stores the colours (--colours), quiet (--quiet), trace (-x) and
+ * verbose (-v) flags in a global variable.
  *)
+let colours = ref false
+let set_colours () = colours := true
+let colours () = !colours
+
 let quiet = ref false
 let set_quiet () = quiet := true
 let quiet () = !quiet
@@ -327,6 +316,21 @@ let trace () = !trace
 let verbose = ref false
 let set_verbose () = verbose := true
 let verbose () = !verbose
+
+(* ANSI terminal colours. *)
+let istty chan =
+  Unix.isatty (Unix.descr_of_out_channel chan)
+
+let ansi_green ?(chan = stdout) () =
+  if colours () || istty chan then output_string chan "\x1b[0;32m"
+let ansi_red ?(chan = stdout) () =
+  if colours () || istty chan then output_string chan "\x1b[1;31m"
+let ansi_blue ?(chan = stdout) () =
+  if colours () || istty chan then output_string chan "\x1b[1;34m"
+let ansi_magenta ?(chan = stdout) () =
+  if colours () || istty chan then output_string chan "\x1b[1;35m"
+let ansi_restore ?(chan = stdout) () =
+  if colours () || istty chan then output_string chan "\x1b[0m"
 
 (* Timestamped progress messages, used for ordinary messages when not
  * --quiet.
@@ -366,11 +370,11 @@ let error ?(exit_code = 1) fs =
 
 let warning fs =
   let display str =
-    let chan = stderr in
+    let chan = stdout in
     ansi_blue ~chan ();
     wrap ~chan (sprintf (f_"%s: warning: %s") prog str);
     ansi_restore ~chan ();
-    prerr_newline ();
+    print_newline ();
   in
   ksprintf display fs
 
@@ -382,6 +386,11 @@ let info fs =
     ansi_restore ~chan ();
     print_newline ();
   in
+  ksprintf display fs
+
+(* Print a debug message. *)
+let debug fs =
+  let display str = if verbose () then prerr_endline str in
   ksprintf display fs
 
 (* Common function to create a new Guestfs handle, with common options
@@ -434,11 +443,11 @@ let read_whole_file path =
   let buf = Buffer.create 16384 in
   let chan = open_in path in
   let maxlen = 16384 in
-  let s = String.create maxlen in
+  let b = Bytes.create maxlen in
   let rec loop () =
-    let r = input chan s 0 maxlen in
+    let r = input chan b 0 maxlen in
     if r > 0 then (
-      Buffer.add_substring buf s 0 r;
+      Buffer.add_substring buf (Bytes.to_string b) 0 r;
       loop ()
     )
   in
@@ -587,6 +596,10 @@ let set_standard_options argspec =
     "--debug-gc",   Arg.Unit set_debug_gc,     " " ^ s_"Debug GC and memory allocations (internal)";
     "-q",           Arg.Unit set_quiet,        " " ^ s_"Don't print progress messages";
     "--quiet",      Arg.Unit set_quiet,        " " ^ s_"Don't print progress messages";
+    "--color",      Arg.Unit set_colours,      " " ^ s_"Use ANSI colour sequences even if not tty";
+    "--colors",     Arg.Unit set_colours,      " " ^ s_"Use ANSI colour sequences even if not tty";
+    "--colour",     Arg.Unit set_colours,      " " ^ s_"Use ANSI colour sequences even if not tty";
+    "--colours",    Arg.Unit set_colours,      " " ^ s_"Use ANSI colour sequences even if not tty";
   ] @ argspec in
   let argspec =
     let cmp (arg1, _, _) (arg2, _, _) = compare_command_line_args arg1 arg2 in
@@ -643,8 +656,19 @@ let compare_lvm2_uuids uuid1 uuid2 =
   in
   loop 0 0
 
+let stringify_args args =
+  let rec quote_args = function
+    | [] -> ""
+    | x :: xs -> " " ^ Filename.quote x ^ quote_args xs
+  in
+  match args with
+  | [] -> ""
+  | app :: xs -> app ^ quote_args xs
+
 (* Run an external command, slurp up the output as a list of lines. *)
-let external_command cmd =
+let external_command ?(echo_cmd = true) cmd =
+  if echo_cmd then
+    debug "%s" cmd;
   let chan = Unix.open_process_in cmd in
   let lines = ref [] in
   (try while true do lines := input_line chan :: !lines done
@@ -661,6 +685,27 @@ let external_command cmd =
     error (f_"external command '%s' stopped by signal %d") cmd i
   );
   lines
+
+let run_command ?(echo_cmd = true) args =
+  if echo_cmd then
+    debug "%s" (stringify_args args);
+  let pid =
+    Unix.create_process (List.hd args) (Array.of_list args) Unix.stdin
+      Unix.stdout Unix.stderr in
+  let _, stat = Unix.waitpid [] pid in
+  match stat with
+  | Unix.WEXITED i -> i
+  | Unix.WSIGNALED i ->
+    error (f_"external command '%s' killed by signal %d")
+      (stringify_args args) i
+  | Unix.WSTOPPED i ->
+    error (f_"external command '%s' stopped by signal %d")
+      (stringify_args args) i
+
+let shell_command ?(echo_cmd = true) cmd =
+  if echo_cmd then
+    debug "%s" cmd;
+  Sys.command cmd
 
 (* Run uuidgen to return a random UUID. *)
 let uuidgen () =
@@ -706,7 +751,7 @@ let rmdir_on_exit =
     List.iter (
       fun dir ->
         let cmd = sprintf "rm -rf %s" (Filename.quote dir) in
-        ignore (Sys.command cmd)
+        ignore (shell_command cmd)
     ) !dirs
   and register_handlers () =
     (* Remove on exit. *)
@@ -742,12 +787,10 @@ let rm_rf_only_files (g : Guestfs.guestfs) ?filter dir =
   )
 
 let truncate_recursive (g : Guestfs.guestfs) dir =
-  if g#is_dir dir then (
-    let files = Array.map (Filename.concat dir) (g#find dir) in
-    let files = Array.to_list files in
-    let files = List.filter g#is_file files in
-    List.iter g#truncate files
-  )
+  let files = Array.map (Filename.concat dir) (g#find dir) in
+  let files = Array.to_list files in
+  let files = List.filter g#is_file files in
+  List.iter g#truncate files
 
 (* Detect type of a file. *)
 let detect_file_type filename =
@@ -755,9 +798,9 @@ let detect_file_type filename =
   let get start size =
     try
       seek_in chan start;
-      let buf = String.create size in
-      really_input chan buf 0 size;
-      Some buf
+      let b = Bytes.create size in
+      really_input chan b 0 size;
+      Some (Bytes.to_string b)
     with End_of_file | Invalid_argument _ -> None
   in
   let ret =
@@ -780,6 +823,19 @@ let is_char_device file =
   try (Unix.stat file).Unix.st_kind = Unix.S_CHR
   with Unix.Unix_error _ -> false
 
+let is_partition dev =
+  try
+    if not (is_block_device dev) then false
+    else (
+      let rdev = (Unix.stat dev).Unix.st_rdev in
+      let major = Dev_t.major rdev in
+      let minor = Dev_t.minor rdev in
+      let path = sprintf "/sys/dev/block/%d:%d/partition" major minor in
+      Unix.access path [Unix.F_OK];
+      true
+    )
+  with Unix.Unix_error _ -> false
+
 (* Annoyingly Sys.is_directory throws an exception on failure
  * (RHBZ#1022431).
  *)
@@ -791,14 +847,12 @@ let absolute_path path =
   if not (Filename.is_relative path) then path
   else Sys.getcwd () // path
 
-(* Sanitizes a filename for passing it safely to qemu/qemu-img.
- *
- * If the filename is something like "file:foo" then qemu-img will
- * try to interpret that as "foo" in the file:/// protocol.  To
- * avoid that, if the path is relative prefix it with "./" since
- * qemu-img won't try to interpret such a path.
- *)
 let qemu_input_filename filename =
+  (* If the filename is something like "file:foo" then qemu-img will
+   * try to interpret that as "foo" in the file:/// protocol.  To
+   * avoid that, if the path is relative prefix it with "./" since
+   * qemu-img won't try to interpret such a path.
+   *)
   if String.length filename > 0 && filename.[0] <> '/' then
     "./" ^ filename
   else

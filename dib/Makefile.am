@@ -33,6 +33,7 @@ SOURCES_ML = \
 	dib.ml
 
 SOURCES_C = \
+	../mllib/dev_t-c.c \
 	../mllib/mkdtemp-c.c
 
 bin_PROGRAMS =
@@ -54,9 +55,11 @@ virt_dib_CFLAGS = \
 	$(WARN_CFLAGS) $(WERROR_CFLAGS)
 
 BOBJECTS = \
+	$(OCAML_BYTES_COMPAT_CMO) \
 	$(top_builddir)/mllib/libdir.cmo \
 	$(top_builddir)/mllib/guestfs_config.cmo \
 	$(top_builddir)/mllib/common_gettext.cmo \
+	$(top_builddir)/mllib/dev_t.cmo \
 	$(top_builddir)/mllib/common_utils.cmo \
 	$(top_builddir)/mllib/mkdtemp.cmo \
 	$(SOURCES_ML:.ml=.cmo)
@@ -98,15 +101,6 @@ virt_dib_LINK = \
 	$(top_srcdir)/ocaml-link.sh -cclib '$(OCAMLCLIBS)' -- \
 	  $(OCAMLFIND) $(BEST) $(OCAMLFLAGS) $(OCAMLPACKAGES) $(OCAMLLINKFLAGS) \
 	  $(OBJECTS) -o $@
-
-.mli.cmi:
-	$(OCAMLFIND) ocamlc $(OCAMLFLAGS) $(OCAMLPACKAGES) -c $< -o $@
-.ml.cmo:
-	$(OCAMLFIND) ocamlc $(OCAMLFLAGS) $(OCAMLPACKAGES) -c $< -o $@
-if HAVE_OCAMLOPT
-.ml.cmx:
-	$(OCAMLFIND) ocamlopt $(OCAMLFLAGS) $(OCAMLPACKAGES) -c $< -o $@
-endif
 
 # Manual pages and HTML files for the website.
 

@@ -184,6 +184,25 @@ and get_ostype = function
       typ distro major minor arch product;
     "Unassigned"
 
+(* Set the <Origin/> element based on the source hypervisor.
+ * https://bugzilla.redhat.com/show_bug.cgi?id=1342398#c6
+ * https://gerrit.ovirt.org/#/c/59147/
+ * ovirt-engine.git: backend/manager/modules/common/src/main/java/org/ovirt/engine/core/common/businessentities/OriginType.java
+ *)
+let origin_of_source_hypervisor = function
+  | VMware -> Some 1
+  | Xen -> Some 2
+  | QEmu | KVM -> Some 7
+  | Physical -> Some 8
+  | HyperV -> Some 9
+
+  (* Anything else is mapped to None, which causes the <Origin/>
+   * element to be omitted from the OVF output, which causes oVirt
+   * to select 0 as the source (which happens to display as "RHEV"
+   * in the UI).
+   *)
+  | _ -> None
+
 (* Generate the .meta file associated with each volume. *)
 let create_meta_files output_alloc sd_uuid image_uuids targets =
   (* Note: Upper case in the .meta, mixed case in the OVF. *)
@@ -238,12 +257,6 @@ let rec create_ovf source targets guestcaps inspect
   let vmtype = match vmtype with `Desktop -> "0" | `Server -> "1" in
   let ostype = get_ostype inspect in
 
-  let origin =
-    match source.s_hypervisor with
-    | VMware -> 1
-    | Xen -> 2
-    | _ -> 0 in
-
   let ovf : doc =
     doc "ovf:Envelope" [
       "xmlns:rasd", "http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_ResourceAllocationSettingData";
@@ -260,66 +273,77 @@ let rec create_ovf source targets guestcaps inspect
       e "Section" ["xsi:type", "ovf:DiskSection_Type"] [
         e "Info" [] [PCData "List of Virtual Disks"]
       ];
-      e "Content" ["ovf:id", "out"; "xsi:type", "ovf:VirtualSystem_Type"] [
-        e "Name" [] [PCData source.s_name];
-        e "TemplateId" [] [PCData "00000000-0000-0000-0000-000000000000"];
-        e "TemplateName" [] [PCData "Blank"];
-        e "Description" [] [PCData generated_by];
-        e "Domain" [] [];
-        e "CreationDate" [] [PCData iso_time];
-        e "IsInitilized" (* sic *) [] [PCData "True"];
-        e "IsAutoSuspend" [] [PCData "False"];
-        e "TimeZone" [] [];
-        e "IsStateless" [] [PCData "False"];
-        e "Origin" [] [PCData (string_of_int origin)];
-        e "VmType" [] [PCData vmtype];
-        (* See https://bugzilla.redhat.com/show_bug.cgi?id=1260590#c17 *)
-        e "DefaultDisplayType" [] [PCData "1"];
 
-        e "Section" ["ovf:id", vm_uuid; "ovf:required", "false";
-                     "xsi:type", "ovf:OperatingSystemSection_Type"] [
-          e "Info" [] [PCData inspect.i_product_name];
-          e "Description" [] [PCData ostype];
-        ];
+      e "Content" ["ovf:id", "out"; "xsi:type", "ovf:VirtualSystem_Type"] (
+        let es = [
+          e "Name" [] [PCData source.s_name];
+          e "TemplateId" [] [PCData "00000000-0000-0000-0000-000000000000"];
+          e "TemplateName" [] [PCData "Blank"];
+          e "Description" [] [PCData generated_by];
+          e "Domain" [] [];
+          e "CreationDate" [] [PCData iso_time];
+          e "IsInitilized" (* sic *) [] [PCData "True"];
+          e "IsAutoSuspend" [] [PCData "False"];
+          e "TimeZone" [] [];
+          e "IsStateless" [] [PCData "False"];
+          e "VmType" [] [PCData vmtype];
+          (* See https://bugzilla.redhat.com/show_bug.cgi?id=1260590#c17 *)
+          e "DefaultDisplayType" [] [PCData "1"];
+        ] in
 
-        e "Section" ["xsi:type", "ovf:VirtualHardwareSection_Type"] [
-          e "Info" [] [PCData (sprintf "%d CPU, %Ld Memory" source.s_vcpu memsize_mb)];
-          e "Item" [] [
-            e "rasd:Caption" [] [PCData (sprintf "%d virtual cpu" source.s_vcpu)];
-            e "rasd:Description" [] [PCData "Number of virtual CPU"];
-            e "rasd:InstanceId" [] [PCData "1"];
-            e "rasd:ResourceType" [] [PCData "3"];
-            e "rasd:num_of_sockets" [] [PCData (string_of_int source.s_vcpu)];
-            e "rasd:cpu_per_socket"[] [PCData "1"];
+        (* Add the <Origin/> element if we can. *)
+        let es =
+          match origin_of_source_hypervisor source.s_hypervisor with
+          | None -> es
+          | Some origin ->
+             es @ [e "Origin" [] [PCData (string_of_int origin)]] in
+
+        es @ [
+          e "Section" ["ovf:id", vm_uuid; "ovf:required", "false";
+                       "xsi:type", "ovf:OperatingSystemSection_Type"] [
+            e "Info" [] [PCData inspect.i_product_name];
+            e "Description" [] [PCData ostype];
           ];
-          e "Item" [] [
-            e "rasd:Caption" [] [PCData (sprintf "%Ld MB of memory" memsize_mb)];
-            e "rasd:Description" [] [PCData "Memory Size"];
-            e "rasd:InstanceId" [] [PCData "2"];
-            e "rasd:ResourceType" [] [PCData "4"];
-            e "rasd:AllocationUnits" [] [PCData "MegaBytes"];
-            e "rasd:VirtualQuantity" [] [PCData (Int64.to_string memsize_mb)];
-          ];
-          e "Item" [] [
-            e "rasd:Caption" [] [PCData "USB Controller"];
-            e "rasd:InstanceId" [] [PCData "3"];
-            e "rasd:ResourceType" [] [PCData "23"];
-            e "rasd:UsbPolicy" [] [PCData "Disabled"];
-          ];
-          (* We always add a qxl device when outputting to RHEV.
-           * See RHBZ#1213701 and RHBZ#1211231 for the reasoning
-           * behind that.
-           *)
-          e "Item" [] [
-            e "rasd:Caption" [] [PCData "Graphical Controller"];
-            e "rasd:InstanceId" [] [PCData (uuidgen ())];
-            e "rasd:ResourceType" [] [PCData "20"];
-            e "Type" [] [PCData "video"];
-            e "rasd:VirtualQuantity" [] [PCData "1"];
-            e "rasd:Device" [] [PCData "qxl"];
+
+          e "Section" ["xsi:type", "ovf:VirtualHardwareSection_Type"] [
+            e "Info" [] [PCData (sprintf "%d CPU, %Ld Memory" source.s_vcpu memsize_mb)];
+            e "Item" [] [
+              e "rasd:Caption" [] [PCData (sprintf "%d virtual cpu" source.s_vcpu)];
+              e "rasd:Description" [] [PCData "Number of virtual CPU"];
+              e "rasd:InstanceId" [] [PCData "1"];
+              e "rasd:ResourceType" [] [PCData "3"];
+              e "rasd:num_of_sockets" [] [PCData (string_of_int source.s_vcpu)];
+              e "rasd:cpu_per_socket"[] [PCData "1"];
+            ];
+            e "Item" [] [
+              e "rasd:Caption" [] [PCData (sprintf "%Ld MB of memory" memsize_mb)];
+              e "rasd:Description" [] [PCData "Memory Size"];
+              e "rasd:InstanceId" [] [PCData "2"];
+              e "rasd:ResourceType" [] [PCData "4"];
+              e "rasd:AllocationUnits" [] [PCData "MegaBytes"];
+              e "rasd:VirtualQuantity" [] [PCData (Int64.to_string memsize_mb)];
+            ];
+            e "Item" [] [
+              e "rasd:Caption" [] [PCData "USB Controller"];
+              e "rasd:InstanceId" [] [PCData "3"];
+              e "rasd:ResourceType" [] [PCData "23"];
+              e "rasd:UsbPolicy" [] [PCData "Disabled"];
+            ];
+            (* We always add a qxl device when outputting to RHEV.
+             * See RHBZ#1213701 and RHBZ#1211231 for the reasoning
+             * behind that.
+             *)
+            e "Item" [] [
+              e "rasd:Caption" [] [PCData "Graphical Controller"];
+              e "rasd:InstanceId" [] [PCData (uuidgen ())];
+              e "rasd:ResourceType" [] [PCData "20"];
+              e "Type" [] [PCData "video"];
+              e "rasd:VirtualQuantity" [] [PCData "1"];
+              e "rasd:Device" [] [PCData "qxl"];
+            ]
           ]
         ]
-      ]
+      )
     ] in
 
   (* Add disks to the OVF XML. *)
@@ -370,7 +394,14 @@ and add_disks targets guestcaps output_alloc sd_uuid image_uuids vol_uuids ovf =
   (* Iterate over the disks, adding them to the OVF document. *)
   iteri (
     fun i ({ target_overlay = ov } as t, image_uuid, vol_uuid) ->
-      let is_boot_drive = i == 0 in
+      (* This sets the boot order to boot the first disk first.  This
+       * isn't generally correct.  We should copy over the boot order
+       * from the source hypervisor.  See long discussion in
+       * https://bugzilla.redhat.com/show_bug.cgi?id=1308535 for
+       * what we should be doing.  (XXX)
+       *)
+      let is_bootable_drive = i == 0 in
+      let boot_order = i+1 in
 
       let fileref = sprintf "%s/%s" image_uuid vol_uuid in
 
@@ -432,7 +463,7 @@ and add_disks targets guestcaps output_alloc sd_uuid image_uuids vol_uuids ovf =
           | Virtio_SCSI -> "VirtIO_SCSI"
           | IDE -> "IDE");
           "ovf:disk-type", "System"; (* RHBZ#744538 *)
-          "ovf:boot", if is_boot_drive then "True" else "False";
+          "ovf:boot", if is_bootable_drive then "True" else "False";
         ] in
         let attrs =
           match actual_size_gb with
@@ -452,7 +483,7 @@ and add_disks targets guestcaps output_alloc sd_uuid image_uuids vol_uuids ovf =
          * will not parse.
          *)
         let caption = sprintf "Drive %d" (i+1) in
-        e "Item" [] [
+        e "Item" [] ([
           e "rasd:Caption" [] [PCData caption];
           e "rasd:InstanceId" [] [PCData vol_uuid];
           e "rasd:ResourceType" [] [PCData "17"];
@@ -466,7 +497,12 @@ and add_disks targets guestcaps output_alloc sd_uuid image_uuids vol_uuids ovf =
           e "rasd:CreationDate" [] [PCData iso_time];
           e "rasd:LastModified" [] [PCData iso_time];
           e "rasd:last_modified_date" [] [PCData iso_time];
-        ] in
+        ] @
+          if is_bootable_drive then
+            [e "BootOrder" [] [PCData (string_of_int boot_order)]]
+          else
+            []
+        ) in
       append_child item virtualhardware_section;
   ) (combine3 targets image_uuids vol_uuids)
 

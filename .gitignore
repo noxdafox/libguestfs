@@ -206,6 +206,7 @@ Makefile.in
 /fish/stamp-virt-copy-out.pod
 /fish/stamp-virt-tar-in.pod
 /fish/stamp-virt-tar-out.pod
+/fish/test-prep.sh
 /fish/virt-copy-in.1
 /fish/virt-copy-out.1
 /fish/virt-tar-in.1
@@ -223,6 +224,7 @@ Makefile.in
 /fuse/test-guestmount-fd
 /fuse/test-guestunmount-fd
 /generator/.depend
+/generator/bytes.ml
 /generator/files-generated.txt
 /generator/generator
 /generator/.pod2text.data*
@@ -288,6 +290,7 @@ Makefile.in
 /make-fs/virt-make-fs.1
 /missing
 /mllib/.depend
+/mllib/bytes.ml
 /mllib/common_gettext.ml
 /mllib/common_utils_tests
 /mllib/dummy
@@ -319,12 +322,15 @@ Makefile.in
 /p2v/dependencies.redhat
 /p2v/dependencies.suse
 /p2v/launch-virt-p2v
+/p2v/stamp-test-virt-p2v-pxe-data-files
 /p2v/stamp-test-virt-p2v-pxe-hostkey
 /p2v/stamp-test-virt-p2v-pxe-kernel
 /p2v/stamp-test-virt-p2v-pxe-userkey
 /p2v/stamp-virt-p2v.pod
 /p2v/stamp-virt-p2v-make-disk.pod
 /p2v/stamp-virt-p2v-make-kickstart.pod
+/p2v/stamp-virt-p2v-make-kiwi.pod
+/p2v/test-virt-p2v-pxe.authorized_keys
 /p2v/test-virt-p2v-pxe.id_rsa
 /p2v/test-virt-p2v-pxe.id_rsa.pub
 /p2v/test-virt-p2v-pxe.img
@@ -336,10 +342,13 @@ Makefile.in
 /p2v/virt-p2v
 /p2v/virt-p2v.1
 /p2v/virt-p2v.i686
+/p2v/virt-p2v.img
 /p2v/virt-p2v-make-disk
 /p2v/virt-p2v-make-disk.1
 /p2v/virt-p2v-make-kickstart
 /p2v/virt-p2v-make-kickstart.1
+/p2v/virt-p2v-make-kiwi
+/p2v/virt-p2v-make-kiwi.1
 /perl/_build
 /perl/bindtests.pl
 /perl/blib
@@ -471,7 +480,7 @@ Makefile.in
 /src/structs-free.c
 /src/structs-print.c
 /src/structs-print.h
-/src/test-utils
+/src/unit-tests
 /stamp-h1
 /sysprep/.depend
 /sysprep/stamp-script1.sh

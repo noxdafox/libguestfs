@@ -171,7 +171,6 @@ let create_libvirt_xml ?pool source target_buses guestcaps
           e "driver" [ "name", "qemu"; "type", "raw" ] [];
           e "target" [
             "dev", drive_prefix ^ drive_name i;
-            "bus", bus_name
           ] []
         ]
     in
@@ -185,7 +184,10 @@ let create_libvirt_xml ?pool source target_buses guestcaps
                     target_buses.target_ide_bus);
       Array.to_list
         (Array.mapi (make_disk "scsi" "sd")
-                    target_buses.target_scsi_bus)
+                    target_buses.target_scsi_bus);
+      Array.to_list
+        (Array.mapi (make_disk "floppy" "fd")
+                    target_buses.target_floppy_bus)
     ] in
 
   let nics =
@@ -318,7 +320,7 @@ class output_libvirt oc output_pool = object
   method prepare_targets source targets =
     (* Get the capabilities from libvirt. *)
     let xml = Domainxml.capabilities ?conn:oc () in
-    if verbose () then printf "libvirt capabilities XML:\n%s\n%!" xml;
+    debug "libvirt capabilities XML:\n%s" xml;
 
     (* This just checks that the capabilities XML is well-formed,
      * early so that we catch parsing errors before conversion.
@@ -386,12 +388,9 @@ class output_libvirt oc output_pool = object
      *)
     let cmd =
       match oc with
-      | None -> sprintf "virsh pool-refresh %s" (quote output_pool)
-      | Some uri ->
-        sprintf "virsh -c %s pool-refresh %s"
-          (quote uri) (quote output_pool) in
-    if verbose () then printf "%s\n%!" cmd;
-    if Sys.command cmd <> 0 then
+      | None -> [ "virsh"; "pool-refresh"; output_pool ]
+      | Some uri -> [ "virsh"; "-c"; uri; "pool-refresh"; output_pool ] in
+    if run_command cmd <> 0 then
       warning (f_"could not refresh libvirt pool %s") output_pool;
 
     (* Parse the capabilities XML in order to get the supported features. *)
@@ -412,18 +411,17 @@ class output_libvirt oc output_pool = object
     close_out chan;
 
     if verbose () then (
-      printf "resulting XML for libvirt:\n%!";
-      DOM.doc_to_chan stdout doc;
-      printf "\n%!";
+      eprintf "resulting XML for libvirt:\n%!";
+      DOM.doc_to_chan stderr doc;
+      eprintf "\n%!";
     );
 
     (* Define the domain in libvirt. *)
     let cmd =
       match oc with
-      | None -> sprintf "virsh define %s" (quote tmpfile)
-      | Some uri ->
-        sprintf "virsh -c %s define %s" (quote uri) (quote tmpfile) in
-    if Sys.command cmd = 0 then (
+      | None -> [ "virsh"; "define"; tmpfile ]
+      | Some uri -> [ "virsh"; "-c"; uri; "define"; tmpfile ] in
+    if run_command cmd = 0 then (
       try Unix.unlink tmpfile with _ -> ()
     ) else (
       warning (f_"could not define libvirt domain.  The libvirt XML is still available in '%s'.  Try running 'virsh define %s' yourself instead.")

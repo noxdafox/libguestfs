@@ -1,5 +1,5 @@
-/* virt-sparsify - interface to statvfs
- * Copyright (C) 2013 Red Hat Inc.
+/* libguestfs OCaml tools common code
+ * Copyright (C) 2016 Red Hat Inc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -20,31 +20,33 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <sys/statvfs.h>
-#include <stdint.h>
+#include <sys/types.h>
 
-#include <caml/alloc.h>
-#include <caml/fail.h>
-#include <caml/memory.h>
 #include <caml/mlvalues.h>
 
-#pragma GCC diagnostic ignored "-Wmissing-prototypes"
+/* OCaml doesn't bind the dev_t calls makedev, major and minor. */
 
+extern value guestfs_int_mllib_dev_t_makedev (value majv, value minv);
+extern value guestfs_int_mllib_dev_t_major (value devv);
+extern value guestfs_int_mllib_dev_t_minor (value devv);
+
+/* NB: This is a "noalloc" call. */
 value
-virt_sparsify_statvfs_free_space (value pathv)
+guestfs_int_mllib_dev_t_makedev (value majv, value minv)
 {
-  CAMLparam1 (pathv);
-  CAMLlocal1 (rv);
-  struct statvfs buf;
-  int64_t free_space;
+  return Val_int (makedev (Int_val (majv), Int_val (minv)));
+}
 
-  if (statvfs (String_val (pathv), &buf) == -1) {
-    perror ("statvfs");
-    caml_failwith ("statvfs");
-  }
+/* NB: This is a "noalloc" call. */
+value
+guestfs_int_mllib_dev_t_major (value devv)
+{
+  return Val_int (major (Int_val (devv)));
+}
 
-  free_space = (int64_t) buf.f_bsize * buf.f_bavail;
-  rv = caml_copy_int64 (free_space);
-
-  CAMLreturn (rv);
+/* NB: This is a "noalloc" call. */
+value
+guestfs_int_mllib_dev_t_minor (value devv)
+{
+  return Val_int (minor (Int_val (devv)));
 }

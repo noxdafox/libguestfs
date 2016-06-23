@@ -137,6 +137,10 @@ object
     in
     Array.iteri make_scsi target_buses.target_scsi_bus;
 
+    (* XXX Highly unlikely that anyone cares, but the current
+     * code ignores target_buses.target_floppy_bus.
+     *)
+
     let net_bus =
       match guestcaps.gcaps_net_bus with
       | Virtio_net -> "virtio-net-pci"
@@ -195,7 +199,7 @@ object
     (* If --qemu-boot option was specified then we should boot the guest. *)
     if qemu_boot then (
       let cmd = sprintf "%s &" (quote file) in
-      ignore (Sys.command cmd)
+      ignore (shell_command cmd)
     )
 end
 

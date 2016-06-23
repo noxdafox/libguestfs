@@ -31,15 +31,12 @@ end
 
 module String : sig
     type t = string
-    val blit : string -> int -> string -> int -> int -> unit
     val compare: t -> t -> int
     val concat : string -> string list -> string
     val contains : string -> char -> bool
     val contains_from : string -> int -> char -> bool
     val copy : string -> string
-    val create : int -> string
     val escaped : string -> string
-    val fill : string -> int -> int -> char -> unit
     val get : string -> int -> char
     val index : string -> char -> int
     val index_from : string -> int -> char -> int
@@ -49,12 +46,8 @@ module String : sig
     val rcontains_from : string -> int -> char -> bool
     val rindex : string -> char -> int
     val rindex_from : string -> int -> char -> int
-    val set : string -> int -> char -> unit
     val sub : string -> int -> int -> string
-    val unsafe_blit : string -> int -> string -> int -> int -> unit
-    val unsafe_fill : string -> int -> int -> char -> unit
     val unsafe_get : string -> int -> char
-    val unsafe_set : string -> int -> char -> unit
 
     val lowercase_ascii : string -> string
     val uppercase_ascii : string -> string
@@ -191,9 +184,18 @@ val warning : ('a, unit, string, unit) format4 -> 'a
 val info : ('a, unit, string, unit) format4 -> 'a
 (** Standard info function.  Note: Use full sentences for this. *)
 
+val debug : ('a, unit, string, unit) format4 -> 'a
+(** Standard debug function.
+
+    The message is only emitted if the verbose ([-v]) flag was set on
+    the command line.  As with libguestfs debugging messages, it is
+    sent to [stderr]. *)
+
 val open_guestfs : ?identifier:string -> unit -> Guestfs.guestfs
 (** Common function to create a new Guestfs handle, with common options
-    (e.g. debug, tracing) already set. *)
+    (e.g. debug, tracing) already set.
+
+    The optional [?identifier] parameter sets the handle identifier. *)
 
 val run_main_and_handle_errors : (unit -> unit) -> unit
 (** Common function for handling pretty-printing exceptions. *)
@@ -232,8 +234,27 @@ val compare_version : string -> string -> int
 val compare_lvm2_uuids : string -> string -> int
 (** Compare two LVM2 UUIDs, ignoring '-' characters. *)
 
-val external_command : string -> string list
-(** Run an external command, slurp up the output as a list of lines. *)
+val stringify_args : string list -> string
+(** Create a "pretty-print" representation of a program invocation
+    (i.e. executable and its arguments). *)
+
+val external_command : ?echo_cmd:bool -> string -> string list
+(** Run an external command, slurp up the output as a list of lines.
+
+    [echo_cmd] specifies whether to output the full command on verbose
+    mode, and it's on by default. *)
+
+val run_command : ?echo_cmd:bool -> string list -> int
+(** Run an external command without using a shell, and return its exit code.
+
+    [echo_cmd] specifies whether output the full command on verbose
+    mode, and it's on by default. *)
+
+val shell_command : ?echo_cmd:bool -> string -> int
+(** Run an external shell command, and return its exit code.
+
+    [echo_cmd] specifies whether to output the full command on verbose
+    mode, and it's on by default. *)
 
 val uuidgen : unit -> string
 (** Run uuidgen to return a random UUID. *)
@@ -267,16 +288,15 @@ val is_char_device : string -> bool
 val is_directory : string -> bool
 (** These don't throw exceptions, unlike the [Sys] functions. *)
 
+val is_partition : string -> bool
+(** Return true if the host device [dev] is a partition.  If it's
+    anything else, or missing, returns false. *)
+
 val absolute_path : string -> string
 (** Convert any path to an absolute path. *)
 
 val qemu_input_filename : string -> string
-(** Sanitizes a filename for passing it safely to qemu/qemu-img.
-
-    If the filename is something like "file:foo" then qemu-img will
-    try to interpret that as "foo" in the file:/// protocol.  To
-    avoid that, if the path is relative prefix it with "./" since
-    qemu-img won't try to interpret such a path. *)
+(** Sanitizes a filename for passing it safely to qemu/qemu-img. *)
 
 val mkdir_p : string -> int -> unit
 (** Creates a directory, and its parents if missing. *)

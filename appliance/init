@@ -17,10 +17,6 @@ if [ ! -d /tmp ] || [ ! -d /var/tmp ]; then
     chmod 1777 /tmp /var/tmp
 fi
 
-# Make sure to find all the libraries, also those in non-standard place
-# but with a proper ld.so configuration pointing at them
-ldconfig
-
 # Try to print a stack trace for segfaults inside the appliance.
 for d in /lib64 /lib; do
   f=$d/libSegFault.so
@@ -70,7 +66,9 @@ ln -s ../run/lock /var/lock
 
 # On Fedora 23, util-linux creates /etc/mtab in %post .. stupid
 # and e2fsprogs fails if the link doesn't exist .. stupid stupid
-ln -s /proc/mounts /etc/mtab
+if ! test -e /etc/mtab; then
+  ln -s /proc/mounts /etc/mtab
+fi
 
 # devtmpfs is required since udev 176
 mount -t devtmpfs /dev /dev
@@ -93,13 +91,13 @@ echo "${machine_id// /}" > /etc/machine-id
 systemd-tmpfiles --prefix=/dev --create --boot
 
 # Find udevd and run it directly.
-for f in /sbin/udevd /lib/udev/udevd \
-    /lib/systemd/systemd-udevd /usr/lib/systemd/systemd-udevd \
+for f in /lib/systemd/systemd-udevd /usr/lib/systemd/systemd-udevd \
+    /sbin/udevd /lib/udev/udevd \
     /usr/lib/udev/udevd; do
-  if [ -x "$f" ]; then UDEVD="$f"; fi
+  if [ -x "$f" ]; then UDEVD="$f"; break; fi
 done
 if [ -z "$UDEVD" ]; then
-  echo "udev not found!  Things will probably not work ..."
+  echo "error: udev not found!  Things will probably not work ..."
 fi
 
 $UDEVD --daemon #--debug

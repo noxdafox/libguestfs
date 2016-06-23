@@ -204,6 +204,10 @@ type target_firmware = TargetBIOS | TargetUEFI
 
 val string_of_target_firmware : target_firmware -> string
 
+type i_firmware =
+  | I_BIOS
+  | I_UEFI of string list
+
 type inspect = {
   i_root : string;                      (** Root device. *)
   i_type : string;                      (** Usual inspection fields. *)
@@ -221,7 +225,9 @@ type inspect = {
     (** This is a map from the app name to the application object.
         Since RPM allows multiple packages with the same name to be
         installed, the value is a list. *)
-  i_uefi : bool;        (** True if the guest could boot with UEFI. *)
+  i_firmware : i_firmware;
+    (** The list of EFI system partitions for the guest with UEFI,
+        otherwise the BIOS identifier. *)
 }
 (** Inspection information. *)
 
@@ -272,10 +278,11 @@ type target_buses = {
   target_virtio_blk_bus : target_bus_slot array;
   target_ide_bus : target_bus_slot array;
   target_scsi_bus : target_bus_slot array;
+  target_floppy_bus : target_bus_slot array;
 }
 (** Mapping of fixed and removable disks to buses.
 
-    As shown in the diagram below, there are (currently) three buses
+    As shown in the diagram below, there are (currently) four buses
     attached to the target VM.  Each contains a chain of fixed or
     removable disks.  Slots can also be empty.
 
@@ -294,8 +301,11 @@ type target_buses = {
    ├────┤ hda ├───┤ hdb ├───┤ hdc ├───┤ hdd │  IDE bus
    │    └─────┘   └─────┘   └─────┘   └─────┘
    │    ┌─────┐   ┌─────┐
-   └────┤  -  ├───┤ vdb │  Virtio-blk bus
-        └─────┘   └─────┘
+   ├────┤  -  ├───┤ vdb │  Virtio-blk bus
+   │    └─────┘   └─────┘
+   │    ┌─────┐
+   └────┤ fda │  Floppy disks
+        └─────┘
 v}
  *)
 

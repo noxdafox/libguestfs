@@ -50,7 +50,7 @@ let run (g : Guestfs.guestfs) root (ops : ops) =
       warning (f_"log file %s: %s (ignored)") logfile (Printexc.to_string exn) in
 
   (* Useful wrapper for scripts. *)
-  let do_run ~display cmd =
+  let do_run ~display ?(warn_failed_no_network = false) cmd =
     if not guest_arch_compatible then
       error (f_"host cpu (%s) and guest arch (%s) are not compatible, so you cannot use command line options that involve running commands in the guest.  Use --firstboot scripts instead.")
             Guestfs_config.host_cpu guest_arch;
@@ -85,11 +85,16 @@ exec >>%s 2>&1
 %s
 " (quote logfile) env_vars cmd in
 
-    if verbose () then printf "running command:\n%s\n%!" cmd;
+    debug "running command:\n%s" cmd;
     try ignore (g#sh cmd)
     with
       Guestfs.Error msg ->
         debug_logfile ();
+        if warn_failed_no_network && not (g#get_network ()) then (
+          prerr_newline ();
+          warning (f_"the command may have failed because the network is disabled.  Try either removing '--no-network' or adding '--network' on the command line.");
+          prerr_newline ()
+        );
         error (f_"%s: command exited with an error") display
   in
 
@@ -114,6 +119,7 @@ exec >>%s 2>&1
     | "pisi" ->   sprintf "pisi it %s" quoted_args
     | "pacman" -> sprintf "pacman -S %s" quoted_args
     | "urpmi" ->  sprintf "urpmi %s" quoted_args
+    | "xbps" ->   sprintf "xbps-install -Sy %s" quoted_args
     | "yum" ->    sprintf "yum -y install %s" quoted_args
     | "zypper" -> sprintf "zypper -n in -l %s" quoted_args
 
@@ -141,6 +147,7 @@ exec >>%s 2>&1
     | "pisi" ->   "pisi upgrade"
     | "pacman" -> "pacman -Su"
     | "urpmi" ->  "urpmi --auto-select"
+    | "xbps" ->   "xbps-install -Suy"
     | "yum" ->    "yum -y update"
     | "zypper" -> "zypper -n update -l"
 
@@ -148,6 +155,30 @@ exec >>%s 2>&1
       error_unknown_package_manager (s_"--update")
     | pm ->
       error_unimplemented_package_manager (s_"--update") pm
+
+  and guest_uninstall_command packages =
+    let quoted_args = String.concat " " (List.map quote packages) in
+    match g#inspect_get_package_management root with
+    | "apk" -> sprintf "apk del %s" quoted_args
+    | "apt" ->
+      (* http://unix.stackexchange.com/questions/22820 *)
+      sprintf "
+        export DEBIAN_FRONTEND=noninteractive
+        apt_opts='-q -y -o Dpkg::Options::=--force-confnew'
+        apt-get $apt_opts remove %s
+      " quoted_args
+    | "dnf" ->    sprintf "dnf -y remove %s" quoted_args
+    | "pisi" ->   sprintf "pisi rm %s" quoted_args
+    | "pacman" -> sprintf "pacman -R %s" quoted_args
+    | "urpmi" ->  sprintf "urpme %s" quoted_args
+    | "xbps" ->   sprintf "xbps-remove -Sy %s" quoted_args
+    | "yum" ->    sprintf "yum -y remove %s" quoted_args
+    | "zypper" -> sprintf "zypper -n rm -l %s" quoted_args
+
+    | "unknown" ->
+      error_unknown_package_manager (s_"--uninstall")
+    | pm ->
+      error_unimplemented_package_manager (s_"--uninstall") pm
 
   (* Windows has package_management == "unknown". *)
   and error_unknown_package_manager flag =
@@ -237,7 +268,7 @@ exec >>%s 2>&1
     | `InstallPackages pkgs ->
       message (f_"Installing packages: %s") (String.concat " " pkgs);
       let cmd = guest_install_command pkgs in
-      do_run ~display:cmd cmd
+      do_run ~display:cmd ~warn_failed_no_network:true cmd
 
     | `Link (target, links) ->
       List.iter (
@@ -274,11 +305,11 @@ exec >>%s 2>&1
       | Subscription_manager.PoolAuto ->
         message (f_"Attaching to compatible subscriptions");
         let cmd = "subscription-manager attach --auto" in
-        do_run ~display:cmd cmd
+        do_run ~display:cmd ~warn_failed_no_network:true cmd
       | Subscription_manager.PoolId id ->
         message (f_"Attaching to the pool %s") id;
         let cmd = sprintf "subscription-manager attach --pool=%s" (quote id) in
-        do_run ~display:cmd cmd
+        do_run ~display:cmd ~warn_failed_no_network:true cmd
       )
 
     | `SMRegister ->
@@ -291,17 +322,18 @@ exec >>%s 2>&1
       let cmd = sprintf "subscription-manager register --username=%s --password=%s"
                   (quote creds.Subscription_manager.sm_username)
                   (quote creds.Subscription_manager.sm_password) in
-      do_run ~display:"subscription-manager register" cmd
+      do_run ~display:"subscription-manager register"
+             ~warn_failed_no_network:true cmd
 
     | `SMRemove ->
       message (f_"Removing all the subscriptions");
       let cmd = "subscription-manager remove --all" in
-      do_run ~display:cmd cmd
+      do_run ~display:cmd ~warn_failed_no_network:true cmd
 
     | `SMUnregister ->
       message (f_"Unregistering with subscription-manager");
       let cmd = "subscription-manager unregister" in
-      do_run ~display:cmd cmd
+      do_run ~display:cmd ~warn_failed_no_network:true cmd
 
     | `SSHInject (user, selector) ->
       (match g#inspect_get_type root with
@@ -328,10 +360,15 @@ exec >>%s 2>&1
       message (f_"Running touch: %s") path;
       g#touch path
 
+    | `UninstallPackages pkgs ->
+      message (f_"Uninstalling packages: %s") (String.concat " " pkgs);
+      let cmd = guest_uninstall_command pkgs in
+      do_run ~display:cmd cmd
+
     | `Update ->
       message (f_"Updating packages");
       let cmd = guest_update_command () in
-      do_run ~display:cmd cmd
+      do_run ~display:cmd ~warn_failed_no_network:true cmd
 
     | `Upload (path, dest) ->
       message (f_"Uploading: %s to %s") path dest;
@@ -415,6 +452,6 @@ exec >>%s 2>&1
   (try ignore (g#debug "sh" [| "fuser"; "-k"; "/sysroot" |])
    with exn ->
      if verbose () then
-       printf (f_"%s: %s (ignored)\n") prog (Printexc.to_string exn)
+       warning (f_"%s (ignored)") (Printexc.to_string exn)
   );
   g#ping_daemon () (* tiny delay after kill *)

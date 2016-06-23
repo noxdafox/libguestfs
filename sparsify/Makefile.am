@@ -37,8 +37,9 @@ SOURCES_ML = \
 
 SOURCES_C = \
 	../fish/progress.c \
+	../mllib/dev_t-c.c \
 	../mllib/progress-c.c \
-	statvfs-c.c
+	../mllib/statvfs-c.c
 
 if HAVE_OCAML
 
@@ -55,10 +56,13 @@ virt_sparsify_CFLAGS = \
 	$(WARN_CFLAGS) $(WERROR_CFLAGS)
 
 BOBJECTS = \
+	$(OCAML_BYTES_COMPAT_CMO) \
 	$(top_builddir)/mllib/guestfs_config.cmo \
 	$(top_builddir)/mllib/common_gettext.cmo \
+	$(top_builddir)/mllib/dev_t.cmo \
 	$(top_builddir)/mllib/common_utils.cmo \
 	$(top_builddir)/mllib/progress.cmo \
+	$(top_builddir)/mllib/StatVFS.cmo \
 	$(SOURCES_ML:.ml=.cmo)
 XOBJECTS = $(BOBJECTS:.cmo=.cmx)
 
@@ -95,15 +99,6 @@ virt_sparsify_LINK = \
 	$(top_srcdir)/ocaml-link.sh -cclib '$(OCAMLCLIBS)' -- \
 	  $(OCAMLFIND) $(BEST) $(OCAMLFLAGS) $(OCAMLPACKAGES) $(OCAMLLINKFLAGS) \
 	  $(OBJECTS) -o $@
-
-.mli.cmi:
-	$(OCAMLFIND) ocamlc $(OCAMLFLAGS) $(OCAMLPACKAGES) -c $< -o $@
-.ml.cmo:
-	$(OCAMLFIND) ocamlc $(OCAMLFLAGS) $(OCAMLPACKAGES) -c $< -o $@
-if HAVE_OCAMLOPT
-.ml.cmx:
-	$(OCAMLFIND) ocamlopt $(OCAMLFLAGS) $(OCAMLPACKAGES) -c $< -o $@
-endif
 
 # Manual pages and HTML files for the website.
 

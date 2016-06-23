@@ -167,6 +167,8 @@ OVAs from other hypervisors will not work.
 
 =item RHEL 5 Xen
 
+=item SUSE Xen
+
 =item Citrix Xen
 
 Citrix Xen has not been recently tested.
@@ -255,6 +257,15 @@ Display help.
 
 See I<--network> below.
 
+=item B<--colors>
+
+=item B<--colours>
+
+Use ANSI colour sequences to colourize messages.  This is the default
+when the output is a tty.  If the output of the program is redirected
+to a file, ANSI colour sequences are disabled unless you use this
+option.
+
 =item B<--compressed>
 
 Write a compressed output file.  This is only allowed if the output
@@ -336,7 +347,7 @@ Xen remote connections can be used.  Other remote libvirt connections
 will not work in general.
 
 See also L</INPUT FROM VMWARE VCENTER SERVER>,
-L</INPUT FROM RHEL 5 XEN> below.
+L</INPUT FROM XEN> below.
 
 =item B<-if> format
 
@@ -1226,9 +1237,10 @@ Perform the conversion of the guest using virt-v2v:
 
 Remove the F<guest.xml> and F<guest-disk*> files.
 
-=head1 INPUT FROM RHEL 5 XEN
+=head1 INPUT FROM XEN
 
-Virt-v2v is able to import Xen guests from RHEL 5 Xen hosts.
+Virt-v2v is able to import Xen guests from RHEL 5 Xen or SLES and
+openSUSE Xen hosts.
 
 Virt-v2v uses libvirt for access to the remote Xen host, and therefore
 the input mode should be I<-i libvirt>.  As this is the default, you
@@ -1538,6 +1550,8 @@ This temporarily places a full copy of the output disks in C<$TMPDIR>.
 
 =back
 
+See also L</Minimum free space check in the host> below.
+
 =head2 VMware vCenter resources
 
 Copying from VMware vCenter is currently quite slow, but we believe
@@ -1589,6 +1603,8 @@ prevent the guest from subsequently booting correctly.
 
 =head1 FREE SPACE FOR CONVERSION
 
+=head2 Free space in the guest
+
 Virt-v2v checks there is sufficient free space in the guest filesystem
 to perform the conversion.  Currently it checks:
 
@@ -1610,6 +1626,21 @@ Linux conversions.
 Minimum free space: 10 MB
 
 =back
+
+=head2 Minimum free space check in the host
+
+You must have sufficient free space in the host directory used to
+store temporary overlays (except in [--in-place] mode).  To find out
+which directory this is, use:
+
+ $ df -h "`guestfish get-cachedir`"
+ Filesystem        Size  Used Avail Use% Mounted on
+ /dev/mapper/root   50G   40G  6.8G  86% /
+
+and look under the C<Avail> column.  Virt-v2v will refuse to do the
+conversion at all unless at least 1GB is available there.
+
+See also L</RESOURCE REQUIREMENTS> above.
 
 =head1 RUNNING VIRT-V2V AS ROOT OR NON-ROOT
 
@@ -1846,6 +1877,12 @@ This is the RHSrvAny Windows binary, used to install a "firstboot"
 script in the guest during conversion of Windows guests.
 
 See also: C<https://github.com/rwmjones/rhsrvany>
+
+=item F<pvvxsvc.exe>
+
+This is a Windows binary shipped with SUSE VMDP, used to install a "firstboot"
+script in Windows guests.  It is required if you intend to use the
+I<--firstboot> or I<--firstboot-command> options with Windows guests.
 
 =item F<rhev-apt.exe>
 

@@ -36,12 +36,18 @@
 #pragma GCC diagnostic ignored "-Wstrict-prototypes" /* error in <gtk.h> */
 #include <gtk/gtk.h>
 
+#include "ignore-value.h"
 #include "p2v.h"
 
 char **all_disks;
 char **all_removable;
 char **all_interfaces;
+int is_iso_environment = 0;
+int feature_colours_option = 0;
 
+static const char *test_disk = NULL;
+
+static void udevadm_settle (void);
 static void set_config_defaults (struct config *config);
 static void find_all_disks (void);
 static void find_all_interfaces (void);
@@ -52,8 +58,10 @@ static const char *options = "Vv";
 static const struct option long_options[] = {
   { "help", 0, 0, HELP_OPTION },
   { "cmdline", 1, 0, 0 },
+  { "iso", 0, 0, 0 },
   { "long-options", 0, 0, 0 },
   { "short-options", 0, 0, 0 },
+  { "test-disk", 1, 0, 0 },
   { "verbose", 0, 0, 'v' },
   { "version", 0, 0, 'V' },
   { 0, 0, 0, 0 }
@@ -73,6 +81,8 @@ usage (int status)
               "Options:\n"
               "  --help                 Display brief help\n"
               " --cmdline=CMDLINE       Used to debug command line parsing\n"
+              " --iso                   Running in the ISO environment\n"
+              " --test-disk=DISK.IMG    For testing, use disk as /dev/sda\n"
               "  -v|--verbose           Verbose messages\n"
               "  -V|--version           Display version and exit\n"
               "For more information, see the manpage %s(1).\n"),
@@ -119,15 +129,13 @@ main (int argc, char *argv[])
   bindtextdomain (PACKAGE, LOCALEBASEDIR);
   textdomain (PACKAGE);
 
-#if ! GLIB_CHECK_VERSION(2,32,0)
-  /* In glib2 < 2.32 you had to call g_thread_init().  In later glib2
-   * that is not required and should not be called.
+  /* There is some raciness between slow devices being discovered by
+   * the kernel and udev and virt-p2v running.  This is a partial
+   * workaround, but a real fix involves handling hotplug events
+   * (possible in GUI mode, not easy in kernel mode).
    */
-  if (glib_check_version (2, 32, 0) != NULL) /* This checks < 2.32 */
-    g_thread_init (NULL);
-#endif
-  gdk_threads_init ();
-  gdk_threads_enter ();
+  udevadm_settle ();
+
   gui_possible = gtk_init_check (&argc, &argv);
 
   for (;;) {
@@ -146,6 +154,18 @@ main (int argc, char *argv[])
         cmdline = parse_cmdline_string (optarg);
         cmdline_source = CMDLINE_SOURCE_COMMAND_LINE;
       }
+      else if (STREQ (long_options[option_index].name, "iso")) {
+        is_iso_environment = 1;
+      }
+      else if (STREQ (long_options[option_index].name, "test-disk")) {
+        if (test_disk != NULL)
+          error (EXIT_FAILURE, 0,
+                 _("only a single --test-disk option can be used"));
+        if (optarg[0] != '/')
+          error (EXIT_FAILURE, 0,
+                 _("--test-disk must be an absolute path"));
+        test_disk = optarg;
+      }
       else
         error (EXIT_FAILURE, 0,
                _("unknown long option: %s (%d)"),
@@ -157,9 +177,7 @@ main (int argc, char *argv[])
       break;
 
     case 'V':
-      printf ("%s %s%s\n",
-              guestfs_int_program_name,
-              PACKAGE_VERSION, PACKAGE_VERSION_EXTRA);
+      printf ("%s %s\n", guestfs_int_program_name, PACKAGE_VERSION_FULL);
       exit (EXIT_SUCCESS);
 
     case HELP_OPTION:
@@ -208,6 +226,12 @@ main (int argc, char *argv[])
   guestfs_int_free_string_list (cmdline);
 
   exit (EXIT_SUCCESS);
+}
+
+static void
+udevadm_settle (void)
+{
+  ignore_value (system ("udevadm settle"));
 }
 
 static void
@@ -285,11 +309,29 @@ set_config_defaults (struct config *config)
   else
     config->flags = 0;
 
-  find_all_disks ();
+  /* Find all block devices in the system. */
+  if (!test_disk)
+    find_all_disks ();
+  else {
+    /* For testing and debugging purposes, you can use
+     * --test-disk=/path/to/disk.img
+     */
+    all_disks = malloc (2 * sizeof (char *));
+    if (all_disks == NULL)
+      error (EXIT_FAILURE, errno, "realloc");
+    all_disks[0] = strdup (test_disk);
+    if (all_disks[0] == NULL)
+      error (EXIT_FAILURE, errno, "strdup");
+    all_disks[1] = NULL;
+  }
   if (all_disks)
     config->disks = guestfs_int_copy_string_list (all_disks);
+
+  /* Find all removable devices in the system. */
   if (all_removable)
     config->removable = guestfs_int_copy_string_list (all_removable);
+
+  /* Find all network interfaces in the system. */
   find_all_interfaces ();
   if (all_interfaces)
     config->interfaces = guestfs_int_copy_string_list (all_interfaces);
@@ -309,8 +351,10 @@ compare (const void *vp1, const void *vp2)
   return strcmp (*p1, *p2);
 }
 
-/* Get parent device of a partition.  Returns 0 if no parent device
- * could be found.
+/**
+ * Get parent device of a partition.
+ *
+ * Returns C<0> if no parent device could be found.
  */
 static dev_t
 partition_parent (dev_t part_dev)
@@ -338,9 +382,10 @@ partition_parent (dev_t part_dev)
   return makedev (parent_major, parent_minor);
 }
 
-/* Return true if the named device (eg. dev == "sda") contains the
- * root filesystem.  root_device is the major:minor of the root
- * filesystem (eg. 8:1 if the root filesystem was /dev/sda1).
+/**
+ * Return true if the named device (eg. C<dev == "sda">) contains the
+ * root filesystem.  C<root_device> is the major:minor of the root
+ * filesystem (eg. C<8:1> if the root filesystem was F</dev/sda1>).
  *
  * This doesn't work for LVs and so on.  However we only really care
  * if this test works on the P2V ISO where the root device is a
@@ -373,6 +418,10 @@ device_contains (const char *dev, dev_t root_device)
   return 0;
 }
 
+/**
+ * Enumerate all disks in F</sys/block> and add them to the global
+ * C<all_disks> and C<all_removable> arrays.
+ */
 static void
 find_all_disks (void)
 {
@@ -446,6 +495,10 @@ find_all_disks (void)
     qsort (all_removable, nr_removable, sizeof (char *), compare);
 }
 
+/**
+ * Enumerate all network interfaces in F</sys/class/net> and add them
+ * to the global C<all_interfaces> array.
+ */
 static void
 find_all_interfaces (void)
 {
@@ -496,7 +549,9 @@ find_all_interfaces (void)
     qsort (all_interfaces, nr_interfaces, sizeof (char *), compare);
 }
 
-/* Read the list of flags from /proc/cpuinfo. */
+/**
+ * Read the list of flags from F</proc/cpuinfo>.
+ */
 static int
 cpuinfo_flags (void)
 {

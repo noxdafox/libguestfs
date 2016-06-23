@@ -52,6 +52,15 @@ extern char **all_disks;
 extern char **all_removable;
 extern char **all_interfaces;
 
+/* True if running inside the virt-p2v ISO environment.  Various
+ * dangerous functions such as the "Reboot" button are disabled if
+ * this is false.
+ */
+extern int is_iso_environment;
+
+/* True if virt-v2v supports the --colours option. */
+extern int feature_colours_option;
+
 /* config.c */
 struct config {
   int verbose;
@@ -118,7 +127,7 @@ extern int conversion_is_running (void);
 /* ssh.c */
 extern int test_connection (struct config *);
 extern mexp_h *open_data_connection (struct config *, int *local_port, int *remote_port);
-extern mexp_h *start_remote_connection (struct config *, const char *remote_dir, const char *libvirt_xml, const char *dmesg);
+extern mexp_h *start_remote_connection (struct config *, const char *remote_dir, const char *libvirt_xml, const char *wrapper_script, const char *dmesg);
 extern const char *get_ssh_error (void);
 
 /* utils.c */
@@ -130,9 +139,7 @@ extern void wait_network_online (const struct config *);
 extern int read_whole_file (const char *filename, char **data_r, size_t *size_r);
 
 /* virt-v2v version and features (read from remote). */
-extern int v2v_major;
-extern int v2v_minor;
-extern int v2v_release;
+extern char *v2v_version;
 
 /* input and output drivers (read from remote). */
 extern char **input_drivers;

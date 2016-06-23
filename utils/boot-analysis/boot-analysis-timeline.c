@@ -48,13 +48,20 @@ static void construct_initcall_timeline (void);
 static char *
 translate_supermin_insmod_message (const char *message)
 {
+  const char *p, *q;
   char *ret;
 
   assert (STRPREFIX (message, "supermin: internal "));
+  p = message       + strlen ("supermin: internal ");
 
-  ret = strdup (message + strlen ("supermin: internal "));
+  /* Strip off the .ko and anything that follows. */
+  q = strstr (p, ".ko");
+  if (q == NULL)
+    error (EXIT_FAILURE, 0, "cannot find '.ko' suffix in '%s'", message);
+
+  ret = strndup (p, q-p);
   if (ret == NULL)
-    error (EXIT_FAILURE, errno, "strdup");
+    error (EXIT_FAILURE, errno, "strndup");
   return ret;
 }
 
@@ -67,6 +74,7 @@ construct_timeline (void)
   size_t i, j, k;
   struct pass_data *data;
   struct activity *activity;
+  const char *first_kernel_message;
 
   for (i = 0; i < NR_TEST_PASSES; ++i) {
     data = &pass_data[i];
@@ -217,12 +225,28 @@ construct_timeline (void)
                    strstr (data->events[k].message, "libvirt XML:"));
 
 #if defined(__aarch64__)
-#define FIRST_KERNEL_MESSAGE "Booting Linux on physical CPU"
 #define FIRST_FIRMWARE_MESSAGE "UEFI firmware starting"
 #else
 #define SGABIOS_STRING "\033[1;256r\033[256;256H\033[6n"
-#define FIRST_KERNEL_MESSAGE "Probing EDD"
 #define FIRST_FIRMWARE_MESSAGE SGABIOS_STRING
+#endif
+
+    /* Try to determine the first message that the kernel prints. */
+#if defined(__aarch64__)
+    first_kernel_message = "Booting Linux on physical CPU";
+#else
+    first_kernel_message = "Probing EDD";
+    for (j = 0; j < data->nr_events; ++j)
+      if (data->events[j].source == GUESTFS_EVENT_APPLIANCE &&
+          strstr (data->events[j].message, first_kernel_message))
+        goto found_first_kernel_message;
+    first_kernel_message = "Linux version ";
+    for (j = 0; j < data->nr_events; ++j)
+      if (data->events[j].source == GUESTFS_EVENT_APPLIANCE &&
+          strstr (data->events[j].message, first_kernel_message))
+        goto found_first_kernel_message;
+    error (EXIT_FAILURE, 0, "could not determine first message printed by the kernel");
+  found_first_kernel_message:
 #endif
 
     /* For the libvirt backend, find the overhead of libvirt. */
@@ -244,7 +268,7 @@ construct_timeline (void)
           data->events[j].source == GUESTFS_EVENT_APPLIANCE &&
           strstr (data->events[j].message, FIRST_FIRMWARE_MESSAGE),
           data->events[k].source == GUESTFS_EVENT_APPLIANCE &&
-          strstr (data->events[k].message, FIRST_KERNEL_MESSAGE));
+          strstr (data->events[k].message, first_kernel_message));
 
 #if defined(__i386__) || defined(__x86_64__)
     /* SGABIOS (option ROM). */
@@ -261,7 +285,7 @@ construct_timeline (void)
           data->events[j].source == GUESTFS_EVENT_APPLIANCE &&
           strstr (data->events[j].message, "SeaBIOS (version"),
           data->events[k].source == GUESTFS_EVENT_APPLIANCE &&
-          strstr (data->events[k].message, FIRST_KERNEL_MESSAGE));
+          strstr (data->events[k].message, first_kernel_message));
 #endif
 
 #if defined(__i386__) || defined(__x86_64__)
@@ -276,23 +300,23 @@ construct_timeline (void)
     /* Find where we run the guest kernel. */
     FIND ("kernel", LONG_ACTIVITY,
           data->events[j].source == GUESTFS_EVENT_APPLIANCE &&
-          strstr (data->events[j].message, FIRST_KERNEL_MESSAGE),
+          strstr (data->events[j].message, first_kernel_message),
           data->events[k].source == GUESTFS_EVENT_CLOSE);
 
     /* Kernel startup to userspace. */
     FIND ("kernel:overhead", 0,
           data->events[j].source == GUESTFS_EVENT_APPLIANCE &&
-          strstr (data->events[j].message, FIRST_KERNEL_MESSAGE),
+          strstr (data->events[j].message, first_kernel_message),
           data->events[k].source == GUESTFS_EVENT_APPLIANCE &&
           strstr (data->events[k].message, "supermin:") &&
           strstr (data->events[k].message, "starting up"));
 
     /* The time taken to get into start_kernel function. */
-    FIND ("kernel:entry", 0,
+    FIND_OPTIONAL ("kernel:entry", 0,
           data->events[j].source == GUESTFS_EVENT_APPLIANCE &&
-          strstr (data->events[j].message, FIRST_KERNEL_MESSAGE),
+          strstr (data->events[j].message, first_kernel_message),
           data->events[k].source == GUESTFS_EVENT_APPLIANCE &&
-          strstr (data->events[k].message, "Linux version"));
+          strstr (data->events[k].message, "Linux version "));
 
 #if defined(__i386__) || defined(__x86_64__)
     /* Alternatives patching instructions (XXX not very accurate we
@@ -306,7 +330,7 @@ construct_timeline (void)
 #endif
 
     /* ftrace patching instructions. */
-    FIND ("kernel:ftrace", 0,
+    FIND_OPTIONAL ("kernel:ftrace", 0,
           data->events[j].source == GUESTFS_EVENT_APPLIANCE &&
           strstr (data->events[j].message, "ftrace: allocating"),
           1);

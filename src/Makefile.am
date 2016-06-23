@@ -125,14 +125,17 @@ libguestfs_la_SOURCES = \
 	osinfo.c \
 	private-data.c \
 	proto.c \
+	qemu.c \
 	stringsbuf.c \
 	structs-compare.c \
 	structs-copy.c \
 	structs-free.c \
 	tmpdirs.c \
+	tsk.c \
 	umask.c \
 	wait.c \
 	whole-file.c \
+	version.c \
 	libguestfs.syms
 
 libguestfs_la_CPPFLAGS = \
@@ -233,6 +236,7 @@ libutils_la_SOURCES = \
 	structs-cleanup.c \
 	structs-print.c \
 	structs-print.h \
+	uefi.c \
 	utils.c
 libutils_la_CPPFLAGS = $(libguestfs_la_CPPFLAGS)
 libutils_la_CFLAGS = $(libguestfs_la_CFLAGS)
@@ -257,26 +261,26 @@ libvirt_is_version_CFLAGS = \
 endif
 
 # Tests: main tests are in tests/c-api.  Here we just have some
-# internal tests of utility functions.  Note we don't just test what's
-# in utils.c, we can test other functions as well here.
+# internal tests of utility functions.
 
 TESTS_ENVIRONMENT = $(top_builddir)/run --test
 LOG_COMPILER = $(VG)
 
-TESTS = test-utils
-check_PROGRAMS = test-utils
+TESTS = unit-tests
+check_PROGRAMS = unit-tests
 
-test_utils_SOURCES = test-utils.c
-test_utils_CPPFLAGS = \
+unit_tests_SOURCES = unit-tests.c
+unit_tests_CPPFLAGS = \
 	-I$(top_srcdir)/gnulib/lib -I$(top_builddir)/gnulib/lib \
 	-I$(top_srcdir)/src -I.
-test_utils_CFLAGS = \
+unit_tests_CFLAGS = \
 	$(WARN_CFLAGS) $(WERROR_CFLAGS)
-test_utils_LDADD = \
-	libguestfs_la-guid.lo \
-	libutils.la \
-	$(LTLIBINTL) \
-	$(top_builddir)/gnulib/lib/libgnu.la
+# We have to link this to libguestfs, but because we want to test
+# non-exported functions we have to link with the objects not the
+# library.
+unit_tests_LDADD = \
+	$(libguestfs_la_OBJECTS) \
+	$(libguestfs_la_LIBADD)
 
 check-valgrind:
 	$(MAKE) VG="@VG@" check

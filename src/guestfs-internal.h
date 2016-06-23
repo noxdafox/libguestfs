@@ -509,6 +509,12 @@ struct guestfs_h
   size_t nr_features;
 };
 
+struct version {
+  int v_major;
+  int v_minor;
+  int v_micro;
+};
+
 /* Per-filesystem data stored for inspect_os. */
 enum inspect_os_format {
   OS_FORMAT_UNKNOWN = 0,
@@ -563,6 +569,7 @@ enum inspect_os_distro {
   OS_DISTRO_ALTLINUX,
   OS_DISTRO_FRUGALWARE,
   OS_DISTRO_PLD_LINUX,
+  OS_DISTRO_VOID_LINUX,
 };
 
 enum inspect_os_package_format {
@@ -574,6 +581,7 @@ enum inspect_os_package_format {
   OS_PACKAGE_FORMAT_PISI,
   OS_PACKAGE_FORMAT_PKGSRC,
   OS_PACKAGE_FORMAT_APK,
+  OS_PACKAGE_FORMAT_XBPS,
 };
 
 enum inspect_os_package_management {
@@ -588,6 +596,7 @@ enum inspect_os_package_management {
   OS_PACKAGE_MANAGEMENT_ZYPPER,
   OS_PACKAGE_MANAGEMENT_DNF,
   OS_PACKAGE_MANAGEMENT_APK,
+  OS_PACKAGE_MANAGEMENT_XBPS,
 };
 
 struct inspect_fs {
@@ -599,8 +608,7 @@ struct inspect_fs {
   enum inspect_os_package_management package_management;
   char *product_name;
   char *product_variant;
-  int major_version;
-  int minor_version;
+  struct version version;
   char *arch;
   char *hostname;
   char *windows_systemroot;
@@ -758,6 +766,7 @@ extern int guestfs_int_set_env_tmpdir (guestfs_h *g, const char *tmpdir);
 extern int guestfs_int_set_env_runtimedir (guestfs_h *g, const char *runtimedir);
 extern int guestfs_int_lazy_make_tmpdir (guestfs_h *g);
 extern int guestfs_int_lazy_make_sockdir (guestfs_h *g);
+extern char *guestfs_int_lazy_make_supermin_appliance_dir (guestfs_h *g);
 extern void guestfs_int_remove_tmpdir (guestfs_h *g);
 extern void guestfs_int_remove_sockdir (guestfs_h *g);
 extern void guestfs_int_recursive_remove_dir (guestfs_h *g, const char *dir);
@@ -900,10 +909,6 @@ extern char *guestfs_int_cmd_get_pipe_errors (struct command *cmd);
 #endif
 extern void guestfs_int_cleanup_cmd_close (struct command **);
 
-/* launch-direct.c */
-extern char *guestfs_int_drive_source_qemu_param (guestfs_h *g, const struct drive_source *src);
-extern bool guestfs_int_discard_possible (guestfs_h *g, struct drive *drv, unsigned long qemu_version);
-
 /* launch-*.c constructors */
 void guestfs_int_init_direct_backend (void) __attribute__((constructor));
 #ifdef HAVE_LIBVIRT_BACKEND
@@ -911,6 +916,17 @@ void guestfs_int_init_libvirt_backend (void) __attribute__((constructor));
 #endif
 void guestfs_int_init_uml_backend (void) __attribute__((constructor));
 void guestfs_int_init_unix_backend (void) __attribute__((constructor));
+
+/* qemu.c */
+struct qemu_data;
+extern struct qemu_data *guestfs_int_test_qemu (guestfs_h *g, struct version *qemu_version);
+extern int guestfs_int_qemu_supports (guestfs_h *g, const struct qemu_data *, const char *option);
+extern int guestfs_int_qemu_supports_device (guestfs_h *g, const struct qemu_data *, const char *device_name);
+extern int guestfs_int_qemu_supports_virtio_scsi (guestfs_h *g, struct qemu_data *, const struct version *qemu_version);
+extern char *guestfs_int_drive_source_qemu_param (guestfs_h *g, const struct drive_source *src);
+extern bool guestfs_int_discard_possible (guestfs_h *g, struct drive *drv, const struct version *qemu_version);
+extern char *guestfs_int_qemu_escape_param (guestfs_h *g, const char *param);
+extern void guestfs_int_free_qemu_data (struct qemu_data *);
 
 /* guid.c */
 extern int guestfs_int_validate_guid (const char *);
@@ -921,5 +937,18 @@ extern int guestfs_int_getumask (guestfs_h *g);
 /* wait.c */
 extern int guestfs_int_waitpid (guestfs_h *g, pid_t pid, int *status, const char *errmsg);
 extern void guestfs_int_waitpid_noerror (pid_t pid);
+struct rusage;
+extern int guestfs_int_wait4 (guestfs_h *g, pid_t pid, int *status, struct rusage *rusage, const char *errmsg);
+
+/* version.c */
+extern void guestfs_int_version_from_libvirt (struct version *v, int vernum);
+extern void guestfs_int_version_from_values (struct version *v, int maj, int min, int mic);
+extern int guestfs_int_version_from_x_y (guestfs_h *g, struct version *v, const char *str);
+extern int guestfs_int_version_from_x_y_re (guestfs_h *g, struct version *v, const char *str, const pcre *re);
+extern int guestfs_int_version_from_x_y_or_x (guestfs_h *g, struct version *v, const char *str);
+extern bool guestfs_int_version_ge (const struct version *v, int maj, int min, int mic);
+extern bool guestfs_int_version_cmp_ge (const struct version *a, const struct version *b);
+#define version_init_null(v) guestfs_int_version_from_values (v, 0, 0, 0)
+#define version_is_null(v) ((v)->v_major == 0 && (v)->v_minor == 0 && (v)->v_micro == 0)
 
 #endif /* GUESTFS_INTERNAL_H_ */

@@ -81,9 +81,7 @@ When virt-p2v starts up in GUI mode, the first dialog looks like this:
  ┌────────────────────────────────────────────────────────┐
  │                      virt-p2v                          │
  │                                                        │
- │ Conversion server: [_________________________________] │
- │                                                        │
- │          SSH port: [22_______________________________] │
+ │ Conversion server: [_______________________] : [22___] │
  │                                                        │
  │         User name: [root_____________________________] │
  │                                                        │
@@ -269,7 +267,7 @@ When conversion is running you will see this dialog:
  │                                                        │
  └────────────────────────────────────────────────────────┘
 
-In the main scrolling area you will see log messages from the virt-v2v
+In the main scrolling area you will see messages from the virt-v2v
 process.
 
 Below the main area, virt-p2v shows you the location of the directory
@@ -551,6 +549,14 @@ the virt-v2v conversion server, but you could provide some extra
 security by configuring the web server to only allow connections from
 P2V machines.
 
+Note that L<ssh-keygen(1)> creates the C<id_rsa> (private key) file
+with mode 0600.  If you simply copy the file to a webserver, the
+webserver will not serve it.  It will reply with "403 Forbidden"
+errors.  You will need to change the mode of the file to make it
+publicly readable, for example by using:
+
+ chmod 0644 id_rsa
+
 =item 4.
 
 SSH identity embedded in the virt-p2v ISO or disk image (like 2.),
@@ -580,6 +586,18 @@ Display help.
 
 This is used for debugging. Instead of parsing the kernel command line
 from F</proc/cmdline>, parse the string parameter C<CMDLINE>.
+
+=item B<--iso>
+
+This flag is passed to virt-p2v when it is launched inside the
+virt-p2v ISO environment, ie. when it is running on a real physical
+machine (and thus not when testing).  It enables various dangerous
+features such as the Reboot button.
+
+=item B<--test-disk=/PATH/TO/DISK.IMG>
+
+For testing or debugging purposes, replace F</dev/sda> with a local
+file.  You must use an absolute path.
 
 =item B<-v>
 
@@ -680,6 +698,13 @@ on the conversion server.  If conversion fails, you should examine
 this log file, and you may be asked to supply the B<complete>,
 B<unedited> log file in any bug reports or support tickets.
 
+=item F<virt-v2v-wrapper.sh>
+
+I<(during/after conversion)>
+
+This is the wrapper script which is used when running virt-v2v.  For
+interest only, do not attempt to run this script yourself.
+
 =back
 
 Before conversion actually begins, virt-p2v then makes one or more
@@ -716,19 +741,23 @@ used.  Secondly libguestfs creates an overlay on top of the NBD
 connection which stores writes in a temporary file on the conversion
 file.
 
-The final step is to send the S<C<virt-v2v -i libvirtxml physical.xml ...>>
-command to the conversion server over the control connection.  This
-references the F<physical.xml> file (see above), which in turn
-references the NBD listening port(s) of the data connection(s).
+The long S<C<virt-v2v -i libvirtxml physical.xml ...>> command is
+wrapped inside a wrapper script and uploaded to the conversion server.
+The final step is to run this wrapper script, in turn running the
+virt-v2v command.  The virt-v2v command references the F<physical.xml>
+file (see above), which in turn references the NBD listening port(s)
+of the data connection(s).
 
 Output from the virt-v2v command (messages, debugging etc) is saved
-both in the log file on the conversion server, and sent over the
-control connection to be displayed in the graphical UI.
+both in the log file on the conversion server.  Only informational
+messages are sent back over the control connection to be displayed in
+the graphical UI.
 
 =head1 SEE ALSO
 
 L<virt-p2v-make-disk(1)>,
 L<virt-p2v-make-kickstart(1)>,
+L<virt-p2v-make-kiwi(1)>,
 L<virt-v2v(1)>,
 L<qemu-nbd(1)>,
 L<ssh(1)>,

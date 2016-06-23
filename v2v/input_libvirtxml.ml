@@ -47,8 +47,7 @@ let get_drive_slot str offset =
        None
 
 let parse_libvirt_xml ?conn xml =
-  if verbose () then
-    printf "libvirt xml is:\n%s\n" xml;
+  debug "libvirt xml is:\n%s" xml;
 
   let doc = Xml.parse_memory xml in
   let xpathctx = Xml.xpath_new_context doc in
@@ -320,6 +319,7 @@ let parse_libvirt_xml ?conn xml =
         | Some s when String.is_prefix s "sd" -> get_drive_slot s 2
         | Some s when String.is_prefix s "vd" -> get_drive_slot s 2
         | Some s when String.is_prefix s "xvd" -> get_drive_slot s 3
+        | Some s when String.is_prefix s "fd" -> get_drive_slot s 2
         | Some s ->
            warning (f_"<target dev='%s'> was ignored because the device name could not be recognized") s;
            None in

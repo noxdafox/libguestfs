@@ -241,6 +241,15 @@ Using I<--no-check-signature> bypasses this check.
 
 See also I<--fingerprint>.
 
+=item B<--colors>
+
+=item B<--colours>
+
+Use ANSI colour sequences to colourize messages.  This is the default
+when the output is a tty.  If the output of the program is redirected
+to a file, ANSI colour sequences are disabled unless you use this
+option.
+
 =item B<--curl> CURL
 
 Specify an alternate L<curl(1)> binary.  You can also use this to add
@@ -495,6 +504,15 @@ See also L</SOURCES OF TEMPLATES> below.
 Note that you should not point I<--source> to sources that you don't
 trust (unless the source is signed by someone you do trust).  See also
 the I<--no-network> option.
+
+=item B<--no-warn-if-partition>
+
+Do not emit a warning if the output device is a partition.  This
+warning avoids a common user error when writing to a USB key or
+external drive, when you should normally write to the whole device
+(S<I<--output /dev/sdX>>), not to a partition on the device
+(S<I<--output /dev/sdX1>>).  Use this option to I<suppress> this
+warning.
 
 =item B<-v>
 
@@ -840,16 +858,17 @@ F<~root/virt-sysprep-firstboot.log>.
 =item Windows
 
 F<rhsrvany.exe>, available from sources at
-L<https://github.com/rwmjones/rhsrvany>, is installed to run the
+L<https://github.com/rwmjones/rhsrvany>, or F<pvvxsvc.exe>, available
+with SUSE VMDP is installed to run the
 first boot scripts.  It is required, and the setup of first boot
 scripts will fail if it is not present.
 
-F<rhsrvany.exe> is copied from the location pointed to by the
+F<rhsrvany.exe> or F<pvvxsvc.exe> is copied from the location pointed to by the
 C<VIRT_TOOLS_DATA_DIR> environment variable; if not set, a compiled-in
 default will be used (something like F</usr/share/virt-tools>).
 
 The output of the first boot scripts is available in the guest as
-F<C:\Program Files\Red Hat\Firstboot\log.txt>.
+F<C:\Program Files\Guestfs\Firstboot\log.txt>.
 
 =back
 
@@ -1819,6 +1838,12 @@ script in Windows guests.  It is required if you intend to use the
 I<--firstboot> or I<--firstboot-command> options with Windows guests.
 
 See also: C<https://github.com/rwmjones/rhsrvany>
+
+=item F<pvvxsvc.exe>
+
+This is a Windows binary shipped with SUSE VMDP, used to install a "firstboot"
+script in Windows guests.  It is required if you intend to use the
+I<--firstboot> or I<--firstboot-command> options with Windows guests.
 
 =back
 

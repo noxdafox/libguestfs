@@ -40,15 +40,16 @@ let rec main () =
   let cmdline, input, output = parse_cmdline () in
 
   (* Print the version, easier than asking users to tell us. *)
-  if verbose () then
-    printf "%s: %s %s (%s)\n%!"
-      prog Guestfs_config.package_name Guestfs_config.package_version Guestfs_config.host_cpu;
+  debug "%s: %s %s (%s)"
+        prog Guestfs_config.package_name
+        Guestfs_config.package_version Guestfs_config.host_cpu;
 
   let source = open_source cmdline input in
   let source = amend_source cmdline source in
 
   let conversion_mode =
     if not cmdline.in_place then (
+      check_host_free_space ();
       let overlays = create_overlays source.s_disks in
       let targets = init_targets cmdline output source overlays in
       Copying (overlays, targets)
@@ -61,6 +62,7 @@ let rec main () =
   );
 
   let g = open_guestfs ~identifier:"v2v" () in
+  g#set_memsize (g#get_memsize () * 8 / 5);
   g#set_network true;
   (match conversion_mode with
    | Copying (overlays, _) -> populate_overlays g overlays
@@ -77,7 +79,7 @@ let rec main () =
   let inspect = Inspect_source.inspect_source cmdline.root_choice g in
 
   let mpstats = get_mpstats g in
-  check_free_space mpstats;
+  check_guest_free_space mpstats;
   (match conversion_mode with
    | Copying (_, targets) ->
        check_target_free_space mpstats source targets output
@@ -126,8 +128,7 @@ let rec main () =
        let target_buses =
          Target_bus_assignment.target_bus_assignment source targets
                                                      guestcaps in
-       if verbose () then
-         printf "%s%!" (string_of_target_buses target_buses);
+       debug "%s" (string_of_target_buses target_buses);
 
        let targets =
          if not cmdline.do_copy then targets
@@ -156,7 +157,7 @@ and open_source cmdline input =
     exit 0
   );
 
-  if verbose () then printf "%s%!" (string_of_source source);
+  debug "%s" (string_of_source source);
 
   (match source.s_hypervisor with
   | OtherHV hv ->
@@ -207,10 +208,25 @@ and amend_source cmdline source =
 
   { source with s_nics = nics }
 
+and overlay_dir = (open_guestfs ())#get_cachedir ()
+
+(* Conversion can fail or hang if there is insufficient free space in
+ * the temporary directory used to store overlays on the host
+ * (RHBZ#1316479).  Although only a few hundred MB is actually
+ * required, make the minimum be 1 GB to allow for the possible 500 MB
+ * guestfs appliance which is also stored here.
+ *)
+and check_host_free_space () =
+  let free_space = StatVFS.free_space overlay_dir in
+  debug "check_host_free_space: overlay_dir=%s free_space=%Ld"
+        overlay_dir free_space;
+  if free_space < 1_073_741_824L then
+    error (f_"insufficient free space in the conversion server temporary directory %s (%s).\n\nEither free up space in that directory, or set the LIBGUESTFS_CACHEDIR environment variable to point to another directory with more than 1GB of free space.\n\nSee also the virt-v2v(1) manual, section \"Minimum free space check in the host\".")
+          overlay_dir (human_size free_space)
+
 (* Create a qcow2 v3 overlay to protect the source image(s). *)
 and create_overlays src_disks =
   message (f_"Creating an overlay to protect the source from being modified");
-  let overlay_dir = (open_guestfs ())#get_cachedir () in
   List.mapi (
     fun i ({ s_qemu_uri = qemu_uri; s_format = format } as source) ->
       let overlay_file =
@@ -227,11 +243,9 @@ and create_overlays src_disks =
         "compat=1.1" ^
           (match format with None -> ""
                            | Some fmt -> ",backing_fmt=" ^ fmt) in
-      let cmd =
-        sprintf "qemu-img create -q -f qcow2 -b %s -o %s %s"
-                (quote qemu_uri) (quote options) overlay_file in
-      if verbose () then printf "%s\n%!" cmd;
-      if Sys.command cmd <> 0 then
+      let cmd = [ "qemu-img"; "create"; "-q"; "-f"; "qcow2"; "-b"; qemu_uri;
+                  "-o"; options; overlay_file ] in
+      if run_command cmd <> 0 then
         error (f_"qemu-img command failed, see earlier errors");
 
       (* Sanity check created overlay (see below). *)
@@ -324,8 +338,8 @@ and get_mpstats g =
 
   if verbose () then (
     (* This is useful for debugging speed / fstrim issues. *)
-    printf "mpstats:\n";
-    List.iter (print_mpstat Pervasives.stdout) mpstats
+    eprintf "mpstats:\n";
+    List.iter (print_mpstat Pervasives.stderr) mpstats
   );
 
   mpstats
@@ -334,7 +348,7 @@ and get_mpstats g =
  * (RHBZ#1139543).  To avoid this situation, check there is some
  * headroom.  Mainly we care about the root filesystem.
  *)
-and check_free_space mpstats =
+and check_guest_free_space mpstats =
   message (f_"Checking for sufficient free disk space in the guest");
   List.iter (
     fun { mp_path = mp;
@@ -453,16 +467,14 @@ and estimate_target_size mpstats targets =
     sum (
       List.map (fun { mp_statvfs = s } -> s.G.blocks *^ s.G.bsize) mpstats
     ) in
-  if verbose () then
-    printf "estimate_target_size: fs_total_size = %Ld [%s]\n%!"
-      fs_total_size (human_size fs_total_size);
+  debug "estimate_target_size: fs_total_size = %Ld [%s]"
+        fs_total_size (human_size fs_total_size);
 
   (* (2) *)
   let source_total_size =
     sum (List.map (fun t -> t.target_overlay.ov_virtual_size) targets) in
-  if verbose () then
-    printf "estimate_target_size: source_total_size = %Ld [%s]\n%!"
-      source_total_size (human_size source_total_size);
+  debug "estimate_target_size: source_total_size = %Ld [%s]"
+        source_total_size (human_size source_total_size);
 
   if source_total_size = 0L then     (* Avoid divide by zero error. *)
     targets
@@ -470,8 +482,7 @@ and estimate_target_size mpstats targets =
     (* (3) Store the ratio as a float to avoid overflows later. *)
     let ratio =
       Int64.to_float fs_total_size /. Int64.to_float source_total_size in
-    if verbose () then
-      printf "estimate_target_size: ratio = %.3f\n%!" ratio;
+    debug "estimate_target_size: ratio = %.3f" ratio;
 
     (* (4) *)
     let fs_free =
@@ -494,13 +505,11 @@ and estimate_target_size mpstats targets =
           | _ -> 0L
         ) mpstats
       ) in
-    if verbose () then
-      printf "estimate_target_size: fs_free = %Ld [%s]\n%!"
-        fs_free (human_size fs_free);
+    debug "estimate_target_size: fs_free = %Ld [%s]"
+          fs_free (human_size fs_free);
     let scaled_saving = Int64.of_float (Int64.to_float fs_free *. ratio) in
-    if verbose () then
-      printf "estimate_target_size: scaled_saving = %Ld [%s]\n%!"
-        scaled_saving (human_size scaled_saving);
+    debug "estimate_target_size: scaled_saving = %Ld [%s]"
+          scaled_saving (human_size scaled_saving);
 
     (* (5) *)
     let targets = List.map (
@@ -510,9 +519,8 @@ and estimate_target_size mpstats targets =
           Int64.to_float size /. Int64.to_float source_total_size in
         let estimated_size =
           size -^ Int64.of_float (proportion *. Int64.to_float scaled_saving) in
-        if verbose () then
-          printf "estimate_target_size: %s: %Ld [%s]\n%!"
-            ov.ov_sd estimated_size (human_size estimated_size);
+        debug "estimate_target_size: %s: %Ld [%s]"
+              ov.ov_sd estimated_size (human_size estimated_size);
         { t with target_estimated_size = Some estimated_size }
     ) targets in
 
@@ -540,11 +548,10 @@ and do_convert g inspect source keep_serial_console rcaps =
     with Not_found ->
       error (f_"virt-v2v is unable to convert this guest type (%s/%s)")
         inspect.i_type inspect.i_distro in
-  if verbose () then printf "picked conversion module %s\n%!" conversion_name;
-  if verbose () then printf "requested caps: %s%!"
-    (string_of_requested_guestcaps rcaps);
+  debug "picked conversion module %s" conversion_name;
+  debug "requested caps: %s" (string_of_requested_guestcaps rcaps);
   let guestcaps = convert ~keep_serial_console g inspect source rcaps in
-  if verbose () then printf "%s%!" (string_of_guestcaps guestcaps);
+  debug "%s" (string_of_guestcaps guestcaps);
 
   (* Did we manage to install virtio drivers? *)
   if not (quiet ()) then (
@@ -565,7 +572,10 @@ and get_target_firmware inspect guestcaps source output =
     | BIOS -> TargetBIOS
     | UEFI -> TargetUEFI
     | UnknownFirmware ->
-       if inspect.i_uefi then TargetUEFI else TargetBIOS in
+       match inspect.i_firmware with
+       | I_BIOS -> TargetBIOS
+       | I_UEFI _ -> TargetUEFI
+  in
   let supported_firmware = output#supported_firmware in
   if not (List.mem target_firmware supported_firmware) then
     error (f_"this guest cannot run on the target, because the target does not support %s firmware (supported firmware on target: %s)")
@@ -597,7 +607,7 @@ and copy_targets cmdline targets input output =
     fun i t ->
       message (f_"Copying disk %d/%d to %s (%s)")
         (i+1) nr_disks t.target_file t.target_format;
-      if verbose () then printf "%s%!" (string_of_target t);
+      debug "%s" (string_of_target t);
 
       (* We noticed that qemu sometimes corrupts the qcow2 file on
        * exit.  This only seemed to happen with lazy_refcounts was
@@ -638,16 +648,13 @@ and copy_targets cmdline targets input output =
         t.target_file t.target_format t.target_overlay.ov_virtual_size
         ?preallocation ?compat;
 
-      let cmd =
-        sprintf "qemu-img convert%s -n -f qcow2 -O %s%s %s %s"
-          (if not (quiet ()) then " -p" else "")
-          (quote t.target_format)
-          (if cmdline.compressed then " -c" else "")
-          (quote overlay_file)
-          (quote t.target_file) in
-      if verbose () then printf "%s\n%!" cmd;
+      let cmd = [ "qemu-img"; "convert" ] @
+        (if not (quiet ()) then [ "-p" ] else []) @
+        [ "-n"; "-f"; "qcow2"; "-O"; t.target_format ] @
+        (if cmdline.compressed then [ "-c" ] else []) @
+        [ overlay_file; t.target_file ] in
       let start_time = gettimeofday () in
-      if Sys.command cmd <> 0 then
+      if run_command cmd <> 0 then
         error (f_"qemu-img command failed, see earlier errors");
       let end_time = gettimeofday () in
 
@@ -663,14 +670,14 @@ and copy_targets cmdline targets input output =
           Int64.to_float size /. 1024. /. 1024. *. 10. /. time
         in
 
-        printf "virtual copying rate: %.1f M bits/sec\n%!"
+        eprintf "virtual copying rate: %.1f M bits/sec\n%!"
           (mbps t.target_overlay.ov_virtual_size elapsed_time);
 
         match t.target_actual_size with
         | None -> ()
         | Some actual ->
-          printf "real copying rate: %.1f M bits/sec\n%!"
-            (mbps actual elapsed_time)
+           eprintf "real copying rate: %.1f M bits/sec\n%!"
+                   (mbps actual elapsed_time)
       );
 
       (* If verbose, find out how close the estimate was.  This is
@@ -684,13 +691,13 @@ and copy_targets cmdline targets input output =
           let pc =
             100. *. Int64.to_float estimate /. Int64.to_float actual
             -. 100. in
-          printf "%s: estimate %Ld (%s) versus actual %Ld (%s): %.1f%%"
+          eprintf "%s: estimate %Ld (%s) versus actual %Ld (%s): %.1f%%"
             t.target_overlay.ov_sd
             estimate (human_size estimate)
             actual (human_size actual)
             pc;
-          if pc < 0. then printf " ! ESTIMATE TOO LOW !";
-          printf "\n%!";
+          if pc < 0. then eprintf " ! ESTIMATE TOO LOW !";
+          eprintf "\n%!";
       );
 
       t
@@ -706,13 +713,12 @@ and actual_target_size target =
 
 (* Save overlays if --debug-overlays option was used. *)
 and preserve_overlays overlays src_name =
-  let overlay_dir = (open_guestfs ())#get_cachedir () in
   List.iter (
     fun ov ->
       let saved_filename =
         sprintf "%s/%s-%s.qcow2" overlay_dir src_name ov.ov_sd in
       rename ov.ov_overlay_file saved_filename;
-      printf (f_"Overlay saved as %s [--debug-overlays]\n") saved_filename
+      info (f_"Overlay saved as %s [--debug-overlays]") saved_filename
   ) overlays
 
 (* Request guest caps based on source configuration. *)

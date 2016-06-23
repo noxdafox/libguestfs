@@ -43,18 +43,18 @@ let convert ~keep_serial_console (g : G.guestfs) inspect source rcaps =
     try Sys.getenv "VIRT_TOOLS_DATA_DIR"
     with Not_found -> Guestfs_config.datadir // "virt-tools" in
 
-  (* Check if RHEV-APT exists.  This is optional. *)
-  let rhev_apt_exe = virt_tools_data_dir // "rhev-apt.exe" in
-  let rhev_apt_exe =
+  (* Check if either RHEV-APT or VMDP exists.  This is optional. *)
+  let tools = [`RhevApt, "rhev-apt.exe"; `VmdpExe, "vmdp.exe"] in
+  let installer =
     try
-      let chan = open_in rhev_apt_exe in
-      close_in chan;
-      Some rhev_apt_exe
-    with
-      Sys_error msg ->
-        warning (f_"'%s' is missing.  Unable to install RHEV-APT (RHEV guest agent).  Original error: %s")
-          rhev_apt_exe msg;
-        None in
+      let t, tool = List.find (
+        fun (_, tool) -> Sys.file_exists (virt_tools_data_dir // tool)
+      ) tools in
+      Some (t, virt_tools_data_dir // tool)
+    with Not_found -> (
+      warning (f_"Neither rhev-apt.exe nor vmdp.exe can be found.  Unable to install one of them.");
+      None
+    ) in
 
   (* Get the Windows %systemroot%. *)
   let systemroot = g#inspect_get_windows_systemroot inspect.i_root in
@@ -176,7 +176,7 @@ let convert ~keep_serial_console (g : G.guestfs) inspect source rcaps =
                  raise Not_found;
 
                let dispname = g#hivex_value_utf8 valueh in
-               if not (Str.string_match (Str.regexp ".*Parallels Tools.*")
+               if not (Str.string_match (Str.regexp ".*\\(Parallels\\|Virtuozzo\\) Tools.*")
                                         dispname 0) then
                  raise Not_found;
 
@@ -211,20 +211,21 @@ let convert ~keep_serial_console (g : G.guestfs) inspect source rcaps =
   (* Perform the conversion of the Windows guest. *)
 
   let rec configure_firstboot () =
-    configure_rhev_apt ();
+    (match installer with
+     | None -> ()
+     | Some (`RhevApt, tool_path) -> configure_rhev_apt tool_path
+     | Some (`VmdpExe, tool_path) -> configure_vmdp tool_path
+    );
     unconfigure_xenpv ();
     unconfigure_prltools ()
 
-  and configure_rhev_apt () =
+  and configure_rhev_apt tool_path =
     (* Configure RHEV-APT (the RHEV guest agent).  However if it doesn't
      * exist just warn about it and continue.
      *)
-    match rhev_apt_exe with
-    | None -> ()
-    | Some rhev_apt_exe ->
-      g#upload rhev_apt_exe "/rhev-apt.exe"; (* XXX *)
+    g#upload tool_path "/rhev-apt.exe"; (* XXX *)
 
-      let fb_script = "\
+    let fb_script = "\
 @echo off
 
 echo installing rhev-apt
@@ -233,8 +234,38 @@ echo installing rhev-apt
 echo starting rhev-apt
 net start rhev-apt
 " in
-      Firstboot.add_firstboot_script g inspect.i_root
-        "configure rhev-apt" fb_script
+    Firstboot.add_firstboot_script g inspect.i_root
+      "configure rhev-apt" fb_script
+
+  and configure_vmdp tool_path =
+    (* Configure VMDP if possible *)
+    g#upload tool_path "/vmdp.exe";
+
+    let fb_script = "\
+echo V2V first boot script started
+echo Decompressing VMDP installer
+\"\\vmdp.exe\"
+pushd \"VMDP-*\"
+echo Installing VMDP
+setup.exe /eula_accepted /no_reboot
+popd
+" in
+
+    let fb_recover_script = "\
+echo Finishing VMDP installation
+if not exist VMDP-* (
+  \"\\vmdp.exe\"
+)
+pushd \"VMDP-*\"
+setup.exe /eula_accepted /no_reboot
+popd
+" in
+
+    Firstboot.add_firstboot_script g inspect.i_root
+      "configure vmdp" fb_script;
+
+    Firstboot.add_firstboot_script g inspect.i_root
+      "finish vmdp setup" fb_recover_script
 
   and unconfigure_xenpv () =
     match xenpv_uninst with
@@ -278,9 +309,10 @@ if errorlevel 3010 exit /b 0
       let value = int_of_le32 (g#hivex_value_value valueh) in
       sprintf "ControlSet%03Ld" value in
 
-    if verbose () then printf "current ControlSet is %s\n%!" current_cs;
+    debug "current ControlSet is %s" current_cs;
 
     disable_services root current_cs;
+    disable_prl_drivers root current_cs;
     disable_autoreboot root current_cs;
     Windows_virtio.install_drivers g inspect systemroot
                                    root current_cs rcaps
@@ -306,6 +338,51 @@ if errorlevel 3010 exit /b 0
              g#hivex_node_delete_child node
            )
          ) disable
+
+  and disable_prl_drivers root current_cs =
+    (* Prevent Parallels drivers from loading at boot. *)
+    let services = Windows.get_node g root [current_cs; "Services"] in
+    let prl_svcs = [ "prl_boot"; "prl_dd"; "prl_eth5"; "prl_fs"; "prl_memdev";
+                     "prl_mouf"; "prl_pv32"; "prl_pv64"; "prl_scsi";
+                     "prl_sound"; "prl_strg"; "prl_tg"; "prl_time";
+                     "prl_uprof"; "prl_va" ] in
+
+    match services with
+    | None -> ()
+    | Some services ->
+        List.iter (
+          fun svc ->
+            let svc_node = g#hivex_node_get_child services svc in
+            if svc_node <> 0L then (
+              (* Disable the service rather than delete the node as it would
+               * confuse the uninstaller called from firstboot script. *)
+              g#hivex_node_set_value svc_node "Start" 4_L (le32_of_int 4_L)
+            )
+        ) prl_svcs;
+
+    (* perfrom the equivalent of DelReg from prl_strg.inf:
+     * HKLM, System\CurrentControlSet\Control\Class\{4d36e967-e325-11ce-bfc1-08002be10318}, LowerFilters, 0x00018002, prl_strg
+     *)
+    let strg_cls = Windows.get_node g root
+                        [current_cs; "Control"; "Class";
+                         "{4d36e967-e325-11ce-bfc1-08002be10318}"] in
+    match strg_cls with
+    | None -> ()
+    | Some strg_cls ->
+        let lfkey = "LowerFilters" in
+        let valueh = g#hivex_node_get_value strg_cls lfkey in
+        if valueh <> 0L then (
+          let data = g#hivex_value_value valueh in
+          let filters = String.nsplit "\000" (Regedit.decode_utf16le data) in
+          let filters = List.filter (
+            fun x -> x <> "prl_strg" && x <> ""
+          ) filters in
+          let filters = List.map (
+            fun x -> Regedit.encode_utf16le x ^ "\000\000"
+          ) (filters @ [""]) in
+          let data = String.concat "" filters in
+          g#hivex_node_set_value strg_cls lfkey 7_L data
+        )
 
   and disable_autoreboot root current_cs =
     (* If the guest reboots after a crash, it's hard to see the original
@@ -423,12 +500,51 @@ if errorlevel 3010 exit /b 0
          * unsigned 16 bit little-endian integer, offset 0x1a from the
          * beginning of the partition.
          *)
-        let bytes = String.create 2 in
-        bytes.[0] <- Char.chr heads;
-        bytes.[1] <- '\000';
-        ignore (g#pwrite_device rootpart bytes 0x1a_L)
+        let b = Bytes.create 2 in
+        Bytes.unsafe_set b 0 (Char.chr heads);
+        Bytes.unsafe_set b 1 '\000';
+        ignore (g#pwrite_device rootpart (Bytes.to_string b) 0x1a_L)
       )
     )
+
+  and fix_win_esp () =
+    let fix_win_uefi_bcd esp_path =
+      try
+        let bcd_path = "/EFI/Microsoft/Boot/BCD" in
+        Windows.with_hive_write g (esp_path ^ bcd_path) (
+          (* Remove the 'graphicsmodedisabled' key in BCD *)
+          fun root ->
+          let path = ["Objects"; "{9dea862c-5cdd-4e70-acc1-f32b344d4795}";
+                      "Elements"; "23000003"] in
+          let boot_mgr_default_link =
+            match Windows.get_node g root path with
+            | None -> raise Not_found
+            | Some node -> node in
+          let current_boot_entry = g#hivex_value_utf8 (
+            g#hivex_node_get_value boot_mgr_default_link "Element") in
+          let path = ["Objects"; current_boot_entry; "Elements"; "16000046"] in
+          match Windows.get_node g root path with
+          | None -> raise Not_found
+          | Some graphics_mode_disabled ->
+            g#hivex_node_delete_child graphics_mode_disabled
+        );
+      with
+        Not_found -> ()
+    in
+
+    match inspect.i_firmware with
+    | I_BIOS -> ()
+    | I_UEFI esp_list ->
+      let esp_temp_path = g#mkdtemp "/Windows/Temp/ESP_XXXXXX" in
+
+      List.iter (
+        fun dev_path ->
+        g#mount dev_path esp_temp_path;
+        fix_win_uefi_bcd esp_temp_path;
+        g#umount esp_temp_path;
+      ) esp_list;
+
+      g#rmdir esp_temp_path
   in
 
   (* Firstboot configuration. *)
@@ -442,6 +558,8 @@ if errorlevel 3010 exit /b 0
   Windows.with_hive_write g software_hive_filename update_software_hive;
 
   fix_ntfs_heads ();
+
+  fix_win_esp ();
 
   (* Warn if installation of virtio block drivers might conflict with
    * group policy or AV software causing a boot 0x7B error (RHBZ#1260689).

@@ -571,6 +571,7 @@ set_up_event_handlers (guestfs_h *g, size_t pass)
   assert (/* 0 <= pass && */ pass < NR_TEST_PASSES);
 
   data = &pass_data[pass];
+  data->magic = PASS_MAGIC;
   data->pass = pass;
   data->nr_events = 0;
   data->events = NULL;
@@ -779,6 +780,7 @@ check_pass_data (void)
   const char *message;
 
   for (i = 0; i < NR_TEST_PASSES; ++i) {
+    assert (pass_data[i].magic == PASS_MAGIC);
     assert (pass_data[i].pass == i);
     assert (pass_data[i].elapsed_ns > 1000);
     assert (pass_data[i].nr_events > 0);
@@ -841,6 +843,8 @@ dump_pass_data (void)
       printf ("\"\n");
     }
   }
+
+  fflush (stdout);
 }
 
 /* Convert source to a printable string.  The caller must free the
@@ -888,6 +892,7 @@ add_activity (const char *name, int flags)
   if (activities == NULL)
     error (EXIT_FAILURE, errno, "realloc");
   ret = &activities[nr_activities-1];
+  ret->magic = ACTIVITY_MAGIC;
   ret->name = strdup (name);
   if (ret->name == NULL)
     error (EXIT_FAILURE, errno, "strdup");
@@ -931,6 +936,9 @@ compare_activities_by_t (const void *av, const void *bv)
 {
   const struct activity *a = av;
   const struct activity *b = bv;
+
+  assert (a->magic == ACTIVITY_MAGIC);
+  assert (b->magic == ACTIVITY_MAGIC);
 
   return a->t - b->t;
 }
@@ -1018,12 +1026,15 @@ dump_timeline (void)
     printf ("    s.d = %.1f\n", activities[i].sd);
     printf ("    percent = %.1f\n", activities[i].percent);
   }
+
+  fflush (stdout);
 }
 
 static void
 print_activity (struct activity *activity)
 {
   if (activity->warning) ansi_red (); else ansi_green ();
+  assert (activity->magic == ACTIVITY_MAGIC);
   print_escaped_string (activity->name);
   ansi_restore ();
   printf (" %.1fms ±%.1fms ",
@@ -1144,7 +1155,18 @@ compare_activities_pointers_by_mean (const void *av, const void *bv)
   const struct activity * const *a = av;
   const struct activity * const *b = bv;
 
-  return (*b)->mean - (*a)->mean;
+  assert ((*a)->magic == ACTIVITY_MAGIC);
+  assert ((*b)->magic == ACTIVITY_MAGIC);
+
+  /* The mean field is a double in nanoseconds.  For the result of the
+   * comparison we want an integer.  If it is larger than around 2^32,
+   * the following will produce an incorrect result.  Therefore we use
+   * this trick.  Note we want to return largest first.
+   */
+  double a_mean = (*a)->mean;
+  double b_mean = (*b)->mean;
+
+  return (b_mean > a_mean) - (b_mean < a_mean);
 }
 
 static void

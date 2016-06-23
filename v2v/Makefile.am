@@ -21,20 +21,6 @@ EXTRA_DIST = \
 	$(SOURCES_MLI) $(SOURCES_ML) $(SOURCES_C) \
 	copy_to_local.ml \
 	v2v_unit_tests.ml \
-	$(TESTS) \
-	test-v2v-cdrom.expected \
-	test-v2v-cdrom.xml \
-	test-v2v-i-ova.ovf \
-	test-v2v-i-ova.xml \
-	test-v2v-i-ova-formats.expected \
-	test-v2v-i-ova-formats.ovf \
-	test-v2v-i-ova-gz.expected \
-	test-v2v-i-ova-gz.ovf \
-	test-v2v-i-ova-two-disks.expected \
-	test-v2v-i-ova-two-disks.ovf \
-	test-v2v-networks-and-bridges-expected.xml \
-	test-v2v-networks-and-bridges.xml \
-	test-v2v-sound.xml \
 	virt-v2v.pod \
 	virt-v2v-copy-to-local.pod
 
@@ -112,7 +98,9 @@ SOURCES_ML = \
 	v2v.ml
 
 SOURCES_C = \
+	../mllib/dev_t-c.c \
 	../mllib/mkdtemp-c.c \
+	../mllib/statvfs-c.c \
 	domainxml-c.c \
 	changeuid-c.c \
 	utils-c.c \
@@ -134,12 +122,15 @@ virt_v2v_CFLAGS = \
 	$(LIBVIRT_CFLAGS)
 
 BOBJECTS = \
+	$(OCAML_BYTES_COMPAT_CMO) \
 	$(top_builddir)/mllib/guestfs_config.cmo \
 	$(top_builddir)/mllib/common_gettext.cmo \
+	$(top_builddir)/mllib/dev_t.cmo \
 	$(top_builddir)/mllib/common_utils.cmo \
 	$(top_builddir)/mllib/regedit.cmo \
 	$(top_builddir)/mllib/mkdtemp.cmo \
 	$(top_builddir)/mllib/JSON.cmo \
+	$(top_builddir)/mllib/StatVFS.cmo \
 	$(top_builddir)/customize/customize_utils.cmo \
 	$(top_builddir)/customize/firstboot.cmo \
 	$(SOURCES_ML:.ml=.cmo)
@@ -185,6 +176,8 @@ virt_v2v_LINK = \
 	  $(OBJECTS) -o $@
 
 virt_v2v_copy_to_local_SOURCES = \
+	../mllib/dev_t-c.c \
+	../mllib/statvfs-c.c \
 	domainxml-c.c \
 	utils-c.c \
 	xml-c.c
@@ -199,10 +192,13 @@ virt_v2v_copy_to_local_CFLAGS = \
 	$(LIBVIRT_CFLAGS)
 
 COPY_TO_LOCAL_BOBJECTS = \
+	$(OCAML_BYTES_COMPAT_CMO) \
 	$(top_builddir)/mllib/guestfs_config.cmo \
 	$(top_builddir)/mllib/common_gettext.cmo \
+	$(top_builddir)/mllib/dev_t.cmo \
 	$(top_builddir)/mllib/common_utils.cmo \
 	$(top_builddir)/mllib/JSON.cmo \
+	$(top_builddir)/mllib/StatVFS.cmo \
 	xml.cmo \
 	utils.cmo \
 	curl.cmo \
@@ -223,15 +219,6 @@ virt_v2v_copy_to_local_LINK = \
 	$(top_srcdir)/ocaml-link.sh -cclib '$(OCAMLCLIBS)' -- \
 	  $(OCAMLFIND) $(BEST) $(OCAMLFLAGS) $(OCAMLPACKAGES) $(OCAMLLINKFLAGS) \
 	  $(COPY_TO_LOCAL_OBJECTS) -o $@
-
-.mli.cmi:
-	$(OCAMLFIND) ocamlc $(OCAMLFLAGS) $(OCAMLPACKAGES) -c $< -o $@
-.ml.cmo:
-	$(OCAMLFIND) ocamlc $(OCAMLFLAGS) $(OCAMLPACKAGES) -c $< -o $@
-if HAVE_OCAMLOPT
-.ml.cmx:
-	$(OCAMLFIND) ocamlopt $(OCAMLFLAGS) $(OCAMLPACKAGES) -c $< -o $@
-endif
 
 # Data directory.
 
@@ -294,6 +281,7 @@ TESTS_ENVIRONMENT = $(top_builddir)/run --test
 TESTS = \
 	test-v2v-i-ova-formats.sh \
 	test-v2v-i-ova-gz.sh \
+	test-v2v-i-ova-subfolders.sh \
 	test-v2v-i-ova-two-disks.sh \
 	test-v2v-copy-to-local.sh \
 	test-v2v-bad-networks-and-bridges.sh
@@ -305,6 +293,7 @@ endif
 if ENABLE_APPLIANCE
 TESTS += \
 	test-v2v-cdrom.sh \
+	test-v2v-floppy.sh \
 	test-v2v-i-ova.sh \
 	test-v2v-i-disk.sh \
 	test-v2v-in-place.sh \
@@ -362,6 +351,54 @@ $(real_guests:%=%.img):
 
 CLEANFILES += $(real_guests:%=%.img)
 
+EXTRA_DIST += \
+	test-v2v-bad-networks-and-bridges.sh \
+	test-v2v-cdrom.expected \
+	test-v2v-cdrom.sh \
+	test-v2v-cdrom.xml \
+	test-v2v-copy-to-local.sh \
+	test-v2v-floppy.expected \
+	test-v2v-floppy.sh \
+	test-v2v-floppy.xml \
+	test-v2v-i-disk.sh \
+	test-v2v-i-ova-formats.expected \
+	test-v2v-i-ova-formats.ovf \
+	test-v2v-i-ova-formats.sh \
+	test-v2v-i-ova-gz.expected \
+	test-v2v-i-ova-gz.ovf \
+	test-v2v-i-ova-gz.sh \
+	test-v2v-i-ova-subfolders.expected \
+	test-v2v-i-ova-subfolders.ovf \
+	test-v2v-i-ova-subfolders.sh \
+	test-v2v-i-ova-two-disks.expected \
+	test-v2v-i-ova-two-disks.ovf \
+	test-v2v-i-ova-two-disks.sh \
+	test-v2v-i-ova.ovf \
+	test-v2v-i-ova.sh \
+	test-v2v-i-ova.xml \
+	test-v2v-in-place.sh \
+	test-v2v-machine-readable.sh \
+	test-v2v-networks-and-bridges-expected.xml \
+	test-v2v-networks-and-bridges.sh \
+	test-v2v-networks-and-bridges.xml \
+	test-v2v-no-copy.sh \
+	test-v2v-o-glance.sh \
+	test-v2v-o-libvirt.sh \
+	test-v2v-o-null.sh \
+	test-v2v-o-qemu.sh \
+	test-v2v-o-rhev.sh \
+	test-v2v-o-vdsm-options.sh \
+	test-v2v-oa-option.sh \
+	test-v2v-of-option.sh \
+	test-v2v-on-option.sh \
+	test-v2v-print-source.sh \
+	test-v2v-real-conversions.sh \
+	test-v2v-sound.sh \
+	test-v2v-sound.xml \
+	test-v2v-trim.sh \
+	test-v2v-virtio-win-iso.sh \
+	test-v2v-windows-conversion.sh
+
 # Unit tests.
 check_PROGRAMS =
 if HAVE_OCAML_PKG_OUNIT
@@ -369,8 +406,10 @@ check_PROGRAMS += v2v_unit_tests
 endif
 
 v2v_unit_tests_BOBJECTS = \
+	$(OCAML_BYTES_COMPAT_CMO) \
 	$(top_builddir)/mllib/guestfs_config.cmo \
 	$(top_builddir)/mllib/common_gettext.cmo \
+	$(top_builddir)/mllib/dev_t.cmo \
 	$(top_builddir)/mllib/common_utils.cmo \
 	$(top_builddir)/mllib/regedit.cmo \
 	stringMap.cmo \

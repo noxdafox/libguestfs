@@ -1183,6 +1183,10 @@ Ubuntu.
 
 The distro could not be determined.
 
+=item \"voidlinux\"
+
+Void Linux.
+
 =item \"windows\"
 
 Windows does not have distributions.  This string is
@@ -1822,7 +1826,8 @@ package format I<or> if the operating system does not have
 a real packaging system (eg. Windows).
 
 Possible strings include:
-C<rpm>, C<deb>, C<ebuild>, C<pisi>, C<pacman>, C<pkgsrc>, C<apk>.
+C<rpm>, C<deb>, C<ebuild>, C<pisi>, C<pacman>, C<pkgsrc>, C<apk>,
+C<xbps>.
 Future versions of libguestfs may return other strings.
 
 Please read L<guestfs(3)/INSPECTION> for more details." };
@@ -1844,7 +1849,7 @@ a real packaging system (eg. Windows).
 
 Possible strings include: C<yum>, C<dnf>, C<up2date>,
 C<apt> (for all Debian derivatives),
-C<portage>, C<pisi>, C<pacman>, C<urpmi>, C<zypper>, C<apk>.
+C<portage>, C<pisi>, C<pacman>, C<urpmi>, C<zypper>, C<apk>, C<xbps>.
 Future versions of libguestfs may return other strings.
 
 Please read L<guestfs(3)/INSPECTION> for more details." };
@@ -3545,6 +3550,120 @@ and C<guestfs_tmpdir> may be too long for them.
 The environment variable C<XDG_RUNTIME_DIR> controls the default
 value: If C<XDG_RUNTIME_DIR> is set, then that is the default.
 Else F</tmp> is the default." };
+
+  { defaults with
+    name = "filesystem_walk"; added = (1, 33, 39);
+    style = RStructList ("dirents", "tsk_dirent"), [Mountable "device";], [];
+    optional = Some "libtsk";
+    progress = true; cancellable = true;
+    shortdesc = "walk through the filesystem content";
+    longdesc = "\
+Walk through the internal structures of a disk partition
+(eg. F</dev/sda1>) in order to return a list of all the files
+and directories stored within.
+
+It is not necessary to mount the disk partition to run this command.
+
+All entries in the filesystem are returned, excluding C<.> and
+C<..>. This function can list deleted or unaccessible files.
+The entries are I<not> sorted.
+
+The C<tsk_dirent> structure contains the following fields.
+
+=over 4
+
+=item 'tsk_inode'
+
+Filesystem reference number of the node. It migh be C<0>
+if the node has been deleted.
+
+=item 'tsk_type'
+
+Basic file type information.
+See below for a detailed list of values.
+
+=item 'tsk_size'
+
+File size in bytes. It migh be C<-1>
+if the node has been deleted.
+
+=item 'tsk_name'
+
+The file path relative to its directory.
+
+=item 'tsk_flags'
+
+Bitfield containing extra information regarding the entry.
+It contains the logical OR of the following values:
+
+=over 4
+
+=item 0x0001
+
+If set to C<1>, the file is allocated and visible within the filesystem.
+Otherwise, the file has been deleted.
+Under certain circumstances, the function C<download_inode>
+can be used to recover deleted files.
+
+=item 0x0002
+
+Filesystem such as NTFS and Ext2 or greater, separate the file name
+from the metadata structure.
+The bit is set to C<1> when the file name is in an unallocated state
+and the metadata structure is in an allocated one.
+This generally implies the metadata has been reallocated to a new file.
+Therefore, information such as file type and file size
+might not correspond with the ones of the original deleted entry.
+
+=back
+
+=back
+
+The C<tsk_type> field will contain one of the following characters:
+
+=over 4
+
+=item 'b'
+
+Block special
+
+=item 'c'
+
+Char special
+
+=item 'd'
+
+Directory
+
+=item 'f'
+
+FIFO (named pipe)
+
+=item 'l'
+
+Symbolic link
+
+=item 'r'
+
+Regular file
+
+=item 's'
+
+Socket
+
+=item 'h'
+
+Shadow inode (Solaris)
+
+=item 'w'
+
+Whiteout inode (BSD)
+
+=item 'u'
+
+Unknown file type
+
+=back" };
 
 ]
 
@@ -5349,14 +5468,13 @@ of a filesystem." };
     style = RString "uuid", [Device "device"], [];
     proc_nr = Some 83;
     deprecated_by = Some "vfs_uuid";
-    tests =
-      (* Regression test for RHBZ#597112. *)
-      (let uuid = uuidgen () in [
-        InitNone, Always, TestResultString (
-          [["mke2journal"; "1024"; "/dev/sdc"];
-           ["set_e2uuid"; "/dev/sdc"; uuid];
-           ["get_e2uuid"; "/dev/sdc"]], uuid), []
-      ]);
+    tests = [
+      (* We can't predict what UUID will be, so just check
+         the command run; regression test for RHBZ#597112. *)
+      InitNone, Always, TestRun (
+        [["mke2journal"; "1024"; "/dev/sdc"];
+         ["get_e2uuid"; "/dev/sdc"]]), []
+    ];
     shortdesc = "get the ext2/3/4 filesystem UUID";
     longdesc = "\
 This returns the ext2/3/4 filesystem UUID of the filesystem on
@@ -12953,10 +13071,48 @@ otherwise the call will fail." };
     progress = true; cancellable = true;
     shortdesc = "download a file to the local machine given its inode";
     longdesc = "\
-Download a file given its inode from the disk partition (eg. F</dev/sda1>)
-and save it as F<filename> on the local machine.
+Download a file given its inode from the disk partition
+(eg. F</dev/sda1>) and save it as F<filename> on the local machine.
 
-This allows to download deleted or inaccessible files." };
+It is not required to mount the disk to run this command.
+
+The command is capable of downloading deleted or inaccessible files." };
+
+  { defaults with
+    name = "btrfs_filesystem_show"; added = (1, 33, 29);
+    style = RStringList "devices", [Device "device"], [];
+    proc_nr = Some 465;
+    optional = Some "btrfs"; camel_name = "BTRFSFilesystemsShow";
+    tests = [
+      InitScratchFS, Always, TestLastFail (
+        [["btrfs_filesystem_show"; "/dev/sdb"]]), [];
+      InitPartition, Always, TestResult (
+        [["mkfs_btrfs"; "/dev/sda1"; ""; ""; "NOARG"; ""; "NOARG"; "NOARG"; ""; ""];
+         ["btrfs_filesystem_show"; "/dev/sda1"]],
+         "is_string_list (ret, 1, \"/dev/sda1\")"), [];
+      InitEmpty, Always, TestResult (
+        [["part_init"; "/dev/sda"; "mbr"];
+         ["part_add"; "/dev/sda"; "p"; "64"; "2047999"];
+         ["part_add"; "/dev/sda"; "p"; "2048000"; "4095999"];
+         ["mkfs_btrfs"; "/dev/sda1 /dev/sda2"; ""; ""; "NOARG"; ""; "NOARG"; "NOARG"; ""; ""];
+         ["btrfs_filesystem_show"; "/dev/sda1"]],
+         "is_string_list (ret, 2, \"/dev/sda1\", \"/dev/sda2\")"), [];
+    ];
+    shortdesc = "list devices for btrfs filesystem";
+    longdesc = "\
+Show all the devices where the filesystems in C<device> is spanned over.
+
+If not all the devices for the filesystems are present, then this function
+fails and the C<errno> is set to C<ENODEV>." };
+
+  { defaults with
+    name = "internal_filesystem_walk"; added = (1, 33, 39);
+    style = RErr, [Mountable "device"; FileOut "filename"], [];
+    proc_nr = Some 466;
+    visibility = VInternal;
+    optional = Some "libtsk";
+    shortdesc = "walk through the filesystem content";
+    longdesc = "Internal function for filesystem_walk." };
 
 ]
 

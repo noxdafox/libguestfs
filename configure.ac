@@ -20,13 +20,13 @@
 # freeform string.
 m4_define([libguestfs_major],   [1])
 m4_define([libguestfs_minor],   [33])
-m4_define([libguestfs_release], [27])
+m4_define([libguestfs_release], [38])
 
 AC_INIT([libguestfs],libguestfs_major.libguestfs_minor.libguestfs_release)
 
 dnl The date that the above version was released.  This is used in
 dnl the website 'index.html' file.
-AC_SUBST([RELEASE_DATE], [2016-05-04])
+AC_SUBST([RELEASE_DATE], [2016-06-18])
 
 AC_CONFIG_AUX_DIR([build-aux])
 AC_REQUIRE_AUX_FILE([guestfs-test-driver])
@@ -157,6 +157,8 @@ AC_CONFIG_FILES([p2v/virt-p2v-make-disk],
                 [chmod +x,-w p2v/virt-p2v-make-disk])
 AC_CONFIG_FILES([p2v/virt-p2v-make-kickstart],
                 [chmod +x,-w p2v/virt-p2v-make-kickstart])
+AC_CONFIG_FILES([p2v/virt-p2v-make-kiwi],
+                [chmod +x,-w p2v/virt-p2v-make-kiwi])
 AC_CONFIG_FILES([php/extension/php-for-tests.sh],
                 [chmod +x,-w php/extension/php-for-tests.sh])
 AC_CONFIG_FILES([pick-guests.pl],

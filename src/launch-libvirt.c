@@ -118,8 +118,8 @@ struct backend_libvirt_data {
   char *network_bridge;
   char name[DOMAIN_NAME_LEN];   /* random name */
   bool is_kvm;                  /* false = qemu, true = kvm (from capabilities)*/
-  unsigned long libvirt_version; /* libvirt version */
-  unsigned long qemu_version;   /* qemu version (from libvirt) */
+  struct version libvirt_version; /* libvirt version */
+  struct version qemu_version;  /* qemu version (from libvirt) */
   struct secret *secrets;       /* list of secrets */
   size_t nr_secrets;
   char *uefi_code;		/* UEFI (firmware) code and variables. */
@@ -253,6 +253,7 @@ launch_libvirt (guestfs_h *g, void *datav, const char *libvirt_uri)
   int r;
   uint32_t size;
   CLEANUP_FREE void *buf = NULL;
+  unsigned long version_number;
 
   params.current_proc_is_root = geteuid () == 0;
 
@@ -262,13 +263,16 @@ launch_libvirt (guestfs_h *g, void *datav, const char *libvirt_uri)
     return -1;
   }
 
-  virGetVersion (&data->libvirt_version, NULL, NULL);
-  debug (g, "libvirt version = %lu (%lu.%lu.%lu)",
-         data->libvirt_version,
-         data->libvirt_version / 1000000UL,
-         data->libvirt_version / 1000UL % 1000UL,
-         data->libvirt_version % 1000UL);
-  if (data->libvirt_version < MIN_LIBVIRT_VERSION) {
+  virGetVersion (&version_number, NULL, NULL);
+  guestfs_int_version_from_libvirt (&data->libvirt_version, version_number);
+  debug (g, "libvirt version = %lu (%d.%d.%d)",
+         version_number,
+         data->libvirt_version.v_major,
+         data->libvirt_version.v_minor,
+         data->libvirt_version.v_micro);
+  if (!guestfs_int_version_ge (&data->libvirt_version,
+                               MIN_LIBVIRT_MAJOR, MIN_LIBVIRT_MINOR,
+                               MIN_LIBVIRT_MICRO)) {
     error (g, _("you must have libvirt >= %d.%d.%d "
                 "to use the 'libvirt' backend"),
            MIN_LIBVIRT_MAJOR, MIN_LIBVIRT_MINOR, MIN_LIBVIRT_MICRO);
@@ -315,16 +319,17 @@ launch_libvirt (guestfs_h *g, void *datav, const char *libvirt_uri)
   virConnSetErrorFunc (conn, NULL, ignore_errors);
 
   /* Get hypervisor (hopefully qemu) version. */
-  if (virConnectGetVersion (conn, &data->qemu_version) == 0) {
-    debug (g, "qemu version (reported by libvirt) = %lu (%lu.%lu.%lu)",
-           data->qemu_version,
-           data->qemu_version / 1000000UL,
-           data->qemu_version / 1000UL % 1000UL,
-           data->qemu_version % 1000UL);
+  if (virConnectGetVersion (conn, &version_number) == 0) {
+    guestfs_int_version_from_libvirt (&data->qemu_version, version_number);
+    debug (g, "qemu version (reported by libvirt) = %lu (%d.%d.%d)",
+           version_number,
+           data->qemu_version.v_major,
+           data->qemu_version.v_minor,
+           data->qemu_version.v_micro);
   }
   else {
     libvirt_debug (g, "unable to read qemu version from libvirt");
-    data->qemu_version = 0;
+    version_init_null (&data->qemu_version);
   }
 
   debug (g, "get libvirt capabilities");
@@ -1071,16 +1076,9 @@ construct_libvirt_xml_cpu (guestfs_h *g,
         } end_element ();
       }
       else {
-        /* XXX This does not work on aarch64, see:
-         * https://www.redhat.com/archives/libvirt-users/2014-August/msg00043.html
-	 * https://bugzilla.redhat.com/show_bug.cgi?id=1184411
-	 * Instead we hack around it using <qemu:commandline> below.
-         */
-#ifndef __aarch64__
         start_element ("model") {
           string (cpu_model);
         } end_element ();
-#endif
       }
     } end_element ();
   }
@@ -1259,7 +1257,7 @@ construct_libvirt_xml_devices (guestfs_h *g,
      * requires Cole Robinson's patch to permit /dev/urandom to be
      * used, which was added in libvirt 1.3.4.
      */
-    if (params->data->libvirt_version >= 1003004) {
+    if (guestfs_int_version_ge (&params->data->libvirt_version, 1, 3, 4)) {
       start_element ("rng") {
         attribute ("model", "virtio");
         start_element ("backend") {
@@ -1574,14 +1572,14 @@ construct_libvirt_xml_disk_driver_qemu (guestfs_h *g,
      */
     break;
   case discard_enable:
-    if (!guestfs_int_discard_possible (g, drv, data->qemu_version))
+    if (!guestfs_int_discard_possible (g, drv, &data->qemu_version))
       return -1;
     /*FALLTHROUGH*/
   case discard_besteffort:
     /* I believe from reading the code that this is always safe as
      * long as qemu >= 1.5.
      */
-    if (data->qemu_version >= 1005000)
+    if (guestfs_int_version_ge (&data->qemu_version, 1, 5, 0))
       discard_unmap = true;
     break;
   }
@@ -1727,22 +1725,6 @@ construct_libvirt_xml_qemu_cmdline (guestfs_h *g,
         } end_element ();
       }
     }
-
-#ifdef __aarch64__
-    /* This is a temporary hack until RHBZ#1184411 is resolved.
-     * See comments above about cpu model and aarch64.
-     */
-    const char *cpu_model = guestfs_int_get_cpu_model (params->data->is_kvm);
-    if (STRNEQ (cpu_model, "host")) {
-      start_element ("qemu:arg") {
-        attribute ("value", "-cpu");
-      } end_element ();
-      start_element ("qemu:arg") {
-        attribute ("value", cpu_model);
-      } end_element ();
-    }
-#endif
-
   } end_element (); /* </qemu:commandline> */
 
   return 0;

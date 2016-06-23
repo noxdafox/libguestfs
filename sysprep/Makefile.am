@@ -80,6 +80,7 @@ SOURCES_ML = \
 	main.ml
 
 SOURCES_C = \
+	../mllib/dev_t-c.c \
 	../mllib/uri-c.c \
 	../mllib/mkdtemp-c.c \
 	../customize/crypt-c.c \
@@ -104,8 +105,10 @@ virt_sysprep_CFLAGS = \
 	$(LIBXML2_CFLAGS)
 
 BOBJECTS = \
+	$(OCAML_BYTES_COMPAT_CMO) \
 	$(top_builddir)/mllib/guestfs_config.cmo \
 	$(top_builddir)/mllib/common_gettext.cmo \
+	$(top_builddir)/mllib/dev_t.cmo \
 	$(top_builddir)/mllib/common_utils.cmo \
 	$(top_builddir)/mllib/URI.cmo \
 	$(top_builddir)/mllib/mkdtemp.cmo \
@@ -166,15 +169,6 @@ virt_sysprep_LINK = \
 	  $(OCAMLFIND) $(BEST) $(OCAMLFLAGS) $(OCAMLPACKAGES) $(OCAMLLINKFLAGS) \
 	  $(OBJECTS) -o $@
 
-.mli.cmi:
-	$(OCAMLFIND) ocamlc $(OCAMLFLAGS) $(OCAMLPACKAGES) -c $< -o $@
-.ml.cmo:
-	$(OCAMLFIND) ocamlc $(OCAMLFLAGS) $(OCAMLPACKAGES) -c $< -o $@
-if HAVE_OCAMLOPT
-.ml.cmx:
-	$(OCAMLFIND) ocamlopt $(OCAMLFLAGS) $(OCAMLPACKAGES) -c $< -o $@
-endif
-
 # Manual pages and HTML files for the website.
 man_MANS = virt-sysprep.1
 noinst_DATA = $(top_builddir)/website/virt-sysprep.1.html
@@ -194,12 +188,12 @@ stamp-virt-sysprep.pod: virt-sysprep.pod sysprep-extra-options.pod sysprep-opera
 
 sysprep-extra-options.pod: virt-sysprep
 	rm -f $@ $@-t
-	$(top_builddir)/run ./$< --dump-pod-options > $@-t
+	$(top_builddir)/run $< --dump-pod-options > $@-t
 	mv $@-t $@
 
 sysprep-operations.pod: virt-sysprep
 	rm -f $@ $@-t
-	$(top_builddir)/run ./$< --dump-pod > $@-t
+	$(top_builddir)/run $< --dump-pod > $@-t
 	mv $@-t $@
 
 # Tests.
@@ -226,7 +220,7 @@ check-valgrind:
 
 check-valgrind-local-guests:
 	for g in $(GUESTS); do \
-	  $(top_builddir)/run --test @VG@ ./virt-sysprep -n -c "$(libvirt_ro_uri)" -d "$$g" || exit $$?; \
+	  $(top_builddir)/run --test @VG@ virt-sysprep -n -c "$(libvirt_ro_uri)" -d "$$g" || exit $$?; \
 	done
 
 # Dependencies.

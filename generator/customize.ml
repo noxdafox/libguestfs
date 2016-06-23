@@ -214,7 +214,7 @@ installed during the image build using the guest's package manager
 For an overview on the different ways to install packages, see
 L<virt-builder(1)/INSTALLING PACKAGES>.
 
-See also I<--update>.";
+See also I<--update>, I<--uninstall>.";
   };
 
   { op_name = "link";
@@ -395,7 +395,7 @@ and also for more keys for each user."
     op_discrim = "`Truncate";
     op_shortdesc = "Truncate a file to zero size";
     op_pod_longdesc = "\
-This command truncates \"path\" to a zero-length file. The file must exist
+This command truncates C<FILE> to a zero-length file. The file must exist
 already.";
   };
 
@@ -404,7 +404,7 @@ already.";
     op_discrim = "`TruncateRecursive";
     op_shortdesc = "Recursively truncate all files in directory";
     op_pod_longdesc = "\
-This command recursively truncates all files under \"path\" to zero-length.";
+This command recursively truncates all files under C<PATH> to zero-length.";
   };
 
   { op_name = "timezone";
@@ -424,6 +424,19 @@ string like C<Europe/London>";
 This command performs a L<touch(1)>-like operation on C<FILE>.";
   };
 
+  { op_name = "uninstall";
+    op_type = StringList "PKG,PKG..";
+    op_discrim = "`UninstallPackages";
+    op_shortdesc = "Uninstall package(s)";
+    op_pod_longdesc = "\
+Uninstall the named packages (a comma-separated list).  These are
+removed during the image build using the guest's package manager
+(eg. apt, yum, etc.).  Dependent packages may also need to be
+uninstalled to satisfy the request.
+
+See also I<--install>, I<--update>.";
+  };
+
   { op_name = "update";
     op_type = Unit;
     op_discrim = "`Update";
@@ -433,7 +446,7 @@ Do the equivalent of C<yum update>, C<apt-get upgrade>, or whatever
 command is required to update the packages already installed in the
 template to their latest versions.
 
-See also I<--install>.";
+See also I<--install>, I<--uninstall>.";
   };
 
   { op_name = "upload";

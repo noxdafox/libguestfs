@@ -69,6 +69,7 @@ SOURCES_C = \
 	../fish/uri.c \
 	../fish/file-edit.c \
 	../fish/file-edit.h \
+	../mllib/dev_t-c.c \
 	../mllib/uri-c.c \
 	crypt-c.c \
 	perl_edit-c.c
@@ -91,8 +92,10 @@ virt_customize_CFLAGS = \
 	$(LIBXML2_CFLAGS)
 
 BOBJECTS = \
+	$(OCAML_BYTES_COMPAT_CMO) \
 	$(top_builddir)/mllib/guestfs_config.cmo \
 	$(top_builddir)/mllib/common_gettext.cmo \
+	$(top_builddir)/mllib/dev_t.cmo \
 	$(top_builddir)/mllib/common_utils.cmo \
 	$(top_builddir)/mllib/regedit.cmo \
 	$(top_builddir)/mllib/URI.cmo \
@@ -138,15 +141,6 @@ virt_customize_LINK = \
 	$(top_srcdir)/ocaml-link.sh -cclib '$(OCAMLCLIBS)' -- \
 	  $(OCAMLFIND) $(BEST) $(OCAMLFLAGS) $(OCAMLPACKAGES) $(OCAMLLINKFLAGS) \
 	  $(OBJECTS) -o $@
-
-.mli.cmi:
-	$(OCAMLFIND) ocamlc $(OCAMLFLAGS) $(OCAMLPACKAGES) -c $< -o $@
-.ml.cmo:
-	$(OCAMLFIND) ocamlc $(OCAMLFLAGS) $(OCAMLPACKAGES) -c $< -o $@
-if HAVE_OCAMLOPT
-.ml.cmx:
-	$(OCAMLFIND) ocamlopt $(OCAMLFLAGS) $(OCAMLPACKAGES) -c $< -o $@
-endif
 
 # Manual pages and HTML files for the website.
 man_MANS = virt-customize.1

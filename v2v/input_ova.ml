@@ -46,23 +46,22 @@ object
         let uncompress_head zcat file =
           let cmd = sprintf "%s %s" zcat (quote file) in
           let chan_out, chan_in, chan_err = Unix.open_process_full cmd [||] in
-          let buf = String.create 512 in
-          let len = input chan_out buf 0 (String.length buf) in
+          let b = Bytes.create 512 in
+          let len = input chan_out b 0 (Bytes.length b) in
           (* We're expecting the subprocess to fail because we close
            * the pipe early, so:
            *)
           ignore (Unix.close_process_full (chan_out, chan_in, chan_err));
 
           let tmpfile, chan = Filename.open_temp_file ~temp_dir:tmpdir "ova.file." "" in
-          output chan buf 0 len;
+          output chan b 0 len;
           close_out chan;
 
           tmpfile in
 
         let untar ?(format = "") file outdir =
-          let cmd = sprintf "tar -x%sf %s -C %s" format (quote file) (quote outdir) in
-          if verbose () then printf "%s\n%!" cmd;
-          if Sys.command cmd <> 0 then
+          let cmd = [ "tar"; sprintf "-x%sf" format; file; "-C"; outdir ] in
+          if run_command cmd <> 0 then
             error (f_"error unpacking %s, see earlier error messages") ova in
 
         match detect_file_type ova with
@@ -74,11 +73,10 @@ object
           (* However, although not permitted by the spec, people ship
            * zip files as ova too.
            *)
-          let cmd = sprintf "unzip%s -j -d %s %s"
-            (if verbose () then "" else " -q")
-            (quote tmpdir) (quote ova) in
-          if verbose () then printf "%s\n%!" cmd;
-          if Sys.command cmd <> 0 then
+          let cmd = [ "unzip" ] @
+            (if verbose () then [] else [ "-q" ]) @
+            [ "-j"; "-d"; tmpdir; ova ] in
+          if run_command cmd <> 0 then
             error (f_"error unpacking %s, see earlier error messages") ova;
           tmpdir
         | (`GZip|`XZ) as format ->
@@ -138,13 +136,14 @@ object
     let rex = Str.regexp "SHA1(\\(.*\\))=\\([0-9a-fA-F]+\\)\r?" in
     List.iter (
       fun mf ->
+        let mf_folder = Filename.dirname mf in
         let chan = open_in mf in
         let rec loop () =
           let line = input_line chan in
           if Str.string_match rex line 0 then (
             let disk = Str.matched_group 1 line in
             let expected = Str.matched_group 2 line in
-            let cmd = sprintf "sha1sum %s" (quote (exploded // disk)) in
+            let cmd = sprintf "sha1sum %s" (quote (mf_folder // disk)) in
             let out = external_command cmd in
             match out with
             | [] ->
@@ -154,9 +153,7 @@ object
               if actual <> expected then
                 error (f_"checksum of disk %s does not match manifest %s (actual sha1(%s) = %s, expected sha1 (%s) = %s)")
                   disk mf disk actual disk expected;
-              if verbose () then
-                printf "sha1 of %s matches expected checksum %s\n%!"
-                  disk expected
+              debug "sha1 of %s matches expected checksum %s" disk expected
             | _::_ -> error (f_"cannot parse output of sha1sum command")
           )
         in
@@ -165,6 +162,7 @@ object
     ) mf;
 
     (* Parse the ovf file. *)
+    let ovf_folder = Filename.dirname ovf in
     let xml = read_whole_file ovf in
     let doc = Xml.parse_memory xml in
 
@@ -265,7 +263,7 @@ object
             | Some s -> s in
 
           (* Does the file exist and is it readable? *)
-          let filename = exploded // filename in
+          let filename = ovf_folder // filename in
           Unix.access filename [Unix.R_OK];
 
           (* The spec allows the file to be gzip-compressed, in which case
@@ -276,8 +274,7 @@ object
               let new_filename = tmpdir // String.random8 () ^ ".vmdk" in
               let cmd =
                 sprintf "zcat %s > %s" (quote filename) (quote new_filename) in
-              if verbose () then printf "%s\n%!" cmd;
-              if Sys.command cmd <> 0 then
+              if shell_command cmd <> 0 then
                 error (f_"error uncompressing %s, see earlier error messages")
                   filename;
               new_filename

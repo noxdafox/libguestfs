@@ -97,10 +97,9 @@ let rec convert ~keep_serial_console (g : G.guestfs) inspect source rcaps =
       "/boot/grub/grub.conf", `Grub1;
     ] in
     let locations =
-      if inspect.i_uefi then
-        ("/boot/efi/EFI/redhat/grub.cfg", `Grub2) :: locations
-      else
-        locations in
+      match inspect.i_firmware with
+      | I_UEFI _ -> ("/boot/efi/EFI/redhat/grub.cfg", `Grub2) :: locations
+      | I_BIOS -> locations in
     try
       List.find (
         fun (grub_config, _) -> g#is_file ~followsymlinks:true grub_config
@@ -125,7 +124,7 @@ let rec convert ~keep_serial_console (g : G.guestfs) inspect source rcaps =
   let installed_kernels : kernel_info list =
     let rex_ko = Str.regexp ".*\\.k?o\\(\\.xz\\)?$" in
     let rex_ko_extract = Str.regexp ".*/\\([^/]+\\)\\.k?o\\(\\.xz\\)?$" in
-    let rex_initrd = Str.regexp "^initr\\(d\\|amfs\\)-.*\\.img$" in
+    let rex_initrd = Str.regexp "^initr\\(d\\|amfs\\)-.*\\(\\.img\\)?$" in
     filter_map (
       function
       | { G.app2_name = name } as app
@@ -158,7 +157,8 @@ let rec convert ~keep_serial_console (g : G.guestfs) inspect source rcaps =
 
              (* Get/construct the version.  XXX Read this from kernel file. *)
              let version =
-               sprintf "%s-%s" app.G.app2_version app.G.app2_release in
+               let prefix_len = String.length "/lib/modules/" in
+               String.sub modpath prefix_len (String.length modpath - prefix_len) in
 
              (* Find the initramfs which corresponds to the kernel.
               * Since the initramfs is built at runtime, and doesn't have
@@ -173,12 +173,11 @@ let rec convert ~keep_serial_console (g : G.guestfs) inspect source rcaps =
                let files =
                  List.filter (
                    fun n ->
-                     String.find n app.G.app2_version >= 0 &&
-                       String.find n app.G.app2_release >= 0
+                     String.find n version >= 0
                  ) files in
                (* Don't consider kdump initramfs images (RHBZ#1138184). *)
                let files =
-                 List.filter (fun n -> String.find n "kdump.img" == -1) files in
+                 List.filter (fun n -> String.find n "kdump" == -1) files in
                (* If several files match, take the shortest match.  This
                 * handles the case where we have a mix of same-version non-Xen
                 * and Xen kernels:
@@ -255,11 +254,11 @@ let rec convert ~keep_serial_console (g : G.guestfs) inspect source rcaps =
     ) inspect.i_apps in
 
   if verbose () then (
-    printf "installed kernel packages in this guest:\n";
+    eprintf "installed kernel packages in this guest:\n";
     List.iter (
-      fun kernel -> printf "\t%s\n" (string_of_kernel_info kernel)
+      fun kernel -> eprintf "\t%s\n" (string_of_kernel_info kernel)
     ) installed_kernels;
-    flush stdout
+    flush stderr
   );
 
   if installed_kernels = [] then
@@ -375,11 +374,11 @@ let rec convert ~keep_serial_console (g : G.guestfs) inspect source rcaps =
     ) vmlinuzes in
 
   if verbose () then (
-    printf "grub kernels in this guest (first in list is default):\n";
+    eprintf "grub kernels in this guest (first in list is default):\n";
     List.iter (
-      fun kernel -> printf "\t%s\n" (string_of_kernel_info kernel)
+      fun kernel -> eprintf "\t%s\n" (string_of_kernel_info kernel)
     ) grub_kernels;
-    flush stdout
+    flush stderr
   );
 
   if grub_kernels = [] then
@@ -516,7 +515,7 @@ let rec convert ~keep_serial_console (g : G.guestfs) inspect source rcaps =
         fun line ->
           if Str.string_match rex line 0 then (
             let path = Str.matched_group 1 line in
-            let path = Linux.shell_unquote path in
+            let path = Utils.shell_unquote path in
             if String.length path >= 1 && path.[0] = '/' then (
               let vboxuninstall = path ^ "/uninstall.sh" in
               Some vboxuninstall
@@ -694,6 +693,20 @@ let rec convert ~keep_serial_console (g : G.guestfs) inspect source rcaps =
       && g#is_file ~followsymlinks:true "/sbin/chkconfig" then (
         ignore (g#command [| "/sbin/chkconfig"; "kudzu"; "off" |])
       )
+
+  and unconfigure_prltools () =
+    let prltools_path = "/usr/lib/parallels-tools/install" in
+    if g#is_file ~followsymlinks:true prltools_path then (
+      try
+        ignore (g#command [| prltools_path; "-r" |]);
+
+        (* Reload Augeas to detect changes made by prltools uninst. *)
+        Linux.augeas_reload g
+      with
+        G.Error msg ->
+          warning (f_"Parallels tools was detected, but uninstallation failed. The error message was: %s (ignored)")
+            msg
+    )
 
   and configure_kernel () =
     (* Previously this function would try to install kernels, but we
@@ -1288,12 +1301,12 @@ let rec convert ~keep_serial_console (g : G.guestfs) inspect source rcaps =
       ) source.s_disks in
 
     if verbose () then (
-      printf "block device map:\n";
+      eprintf "block device map:\n";
       List.iter (
         fun (source_dev, target_dev) ->
-          printf "\t%s\t-> %s\n" source_dev target_dev
+          eprintf "\t%s\t-> %s\n" source_dev target_dev
       ) (List.sort (fun (a,_) (b,_) -> compare a b) map);
-      flush stdout
+      flush stderr
     );
 
     (* Possible Augeas paths to search for device names. *)
@@ -1415,6 +1428,7 @@ let rec convert ~keep_serial_console (g : G.guestfs) inspect source rcaps =
   unconfigure_vmware ();
   unconfigure_citrix ();
   unconfigure_kudzu ();
+  unconfigure_prltools ();
 
   let kernel, virtio = configure_kernel () in
 

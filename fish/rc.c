@@ -16,6 +16,10 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
+/**
+ * This file implements guestfish remote (command) support.
+ */
+
 #include <config.h>
 
 #include <stdio.h>
@@ -82,101 +86,99 @@ create_sockpath (pid_t pid, char *sockpath, size_t len,
   strcpy (addr->sun_path, sockpath);
 }
 
-static const socklen_t controllen = CMSG_LEN (sizeof (int));
-
+/* http://man7.org/tlpi/code/online/dist/sockets/scm_rights_recv.c.html */
 static void
 receive_stdout (int s)
 {
-  static struct cmsghdr *cmptr = NULL, *h;
-  struct msghdr         msg;
-  struct iovec          iov[1];
-
-  /* Our 1 byte buffer */
+  union {
+    struct cmsghdr cmh;
+    char control[CMSG_SPACE (sizeof (int))]; /* space for 1 fd */
+  } control_un;
+  struct cmsghdr *cmptr;
+  struct msghdr msg;
+  struct iovec iov;
+  ssize_t n;
+  int fd;
   char buf[1];
 
-  if (NULL == cmptr) {
-    cmptr = malloc (controllen);
-    if (NULL == cmptr)
-      error (EXIT_FAILURE, errno, "malloc");
-  }
+  msg.msg_iov = &iov;
+  msg.msg_iovlen = 1;
+  iov.iov_base = buf;
+  iov.iov_len = sizeof buf;
 
-  /* Don't specify a source */
-  memset (&msg, 0, sizeof msg);
   msg.msg_name = NULL;
   msg.msg_namelen = 0;
 
-  /* Initialise the msghdr to receive zero byte */
-  iov[0].iov_base = buf;
-  iov[0].iov_len  = 1;
-  msg.msg_iov     = iov;
-  msg.msg_iovlen  = 1;
+  msg.msg_control = control_un.control;
+  msg.msg_controllen = sizeof (control_un.control);
 
-  /* Initialise the control data */
-  msg.msg_control     = cmptr;
-  msg.msg_controllen  = controllen;
+  control_un.cmh.cmsg_len = CMSG_LEN (sizeof (int));
+  control_un.cmh.cmsg_level = SOL_SOCKET;
+  control_un.cmh.cmsg_type = SCM_RIGHTS;
 
   /* Read a message from the socket */
-  ssize_t n = recvmsg (s, &msg, 0);
+  n = recvmsg (s, &msg, 0);
   if (n < 0)
     error (EXIT_FAILURE, errno, "recvmsg stdout fd");
 
-  h = CMSG_FIRSTHDR(&msg);
-  if (NULL == h) {
-    fprintf (stderr, "didn't receive a stdout file descriptor\n");
-  }
+  cmptr = CMSG_FIRSTHDR (&msg);
+  if (cmptr == NULL)
+    error (EXIT_FAILURE, errno, "didn't receive a stdout file descriptor");
+  if (cmptr->cmsg_len != CMSG_LEN (sizeof (int)))
+    error (EXIT_FAILURE, 0, "cmsg_len != CMSG_LEN (sizeof (int))");
+  if (cmptr->cmsg_level != SOL_SOCKET)
+    error (EXIT_FAILURE, 0, "cmsg_level != SOL_SOCKET");
+  if (cmptr->cmsg_type != SCM_RIGHTS)
+    error (EXIT_FAILURE, 0, "cmsg_type != SCM_RIGHTS");
 
-  else {
-    /* Extract the transferred file descriptor from the control data */
-    void *data = CMSG_DATA (h);
-    int fd = *(int *)data;
+  /* Extract the transferred file descriptor from the control data */
+  memcpy (&fd, CMSG_DATA (cmptr), sizeof fd);
 
-    /* Duplicate the received file descriptor to stdout */
-    dup2 (fd, STDOUT_FILENO);
-    close (fd);
-  }
+  /* Duplicate the received file descriptor to stdout */
+  dup2 (fd, STDOUT_FILENO);
+  close (fd);
 }
 
+/* http://man7.org/tlpi/code/online/dist/sockets/scm_rights_send.c.html */
 static void
 send_stdout (int s)
 {
-  static struct cmsghdr *cmptr = NULL;
-  struct msghdr         msg;
-  struct iovec          iov[1];
-
-  /* Our 1 byte dummy buffer */
+  union {
+    struct cmsghdr cmh;
+    char control[CMSG_SPACE (sizeof (int))]; /* space for 1 fd */
+  } control_un;
+  struct cmsghdr *cmptr;
+  struct msghdr msg;
+  struct iovec iov;
   char buf[1];
+  int fd;
 
-  /* Don't specify a destination */
-  memset (&msg, 0, sizeof msg);
-  msg.msg_name    = NULL;
+  /* This suppresses a valgrind warning about uninitialized data.
+   * It's unclear if this is hiding a real problem or not.  XXX
+   */
+  memset (&control_un, 0, sizeof control_un);
+
+  /* On Linux you have to transmit at least 1 byte of real data. */
+  msg.msg_iov = &iov;
+  msg.msg_iovlen = 1;
+  buf[0] = 0;
+  iov.iov_base = buf;
+  iov.iov_len = sizeof buf;
+
+  msg.msg_name = NULL;
   msg.msg_namelen = 0;
 
-  /* Initialise the msghdr to send zero byte */
-  iov[0].iov_base = buf;
-  iov[0].iov_len  = 1;
-  msg.msg_iov     = iov;
-  msg.msg_iovlen  = 1;
+  msg.msg_control = control_un.control;
+  msg.msg_controllen = sizeof (control_un.control);
 
-  /* Initialize the zero byte */
-  buf[0] = 0;
-
-  /* Initialize the control data */
-  if (NULL == cmptr) {
-    cmptr = malloc (controllen);
-    if (NULL == cmptr)
-      error (EXIT_FAILURE, errno, "malloc");
-  }
+  cmptr = CMSG_FIRSTHDR (&msg);
+  cmptr->cmsg_len = CMSG_LEN (sizeof (int));
   cmptr->cmsg_level = SOL_SOCKET;
   cmptr->cmsg_type  = SCM_RIGHTS;
-  cmptr->cmsg_len   = controllen;
-
-  /* Add control header to the message */
-  msg.msg_control     = cmptr;
-  msg.msg_controllen  = controllen;
 
   /* Add STDOUT to the control data */
-  void *data = CMSG_DATA (cmptr);
-  *(int *)data = STDOUT_FILENO;
+  fd = STDOUT_FILENO;
+  memcpy (CMSG_DATA (cmptr), &fd, sizeof fd);
 
   if (sendmsg (s, &msg, 0) != 1)
     error (EXIT_FAILURE, errno, "sendmsg stdout fd");
@@ -196,7 +198,9 @@ close_stdout (void)
   }
 }
 
-/* Remote control server. */
+/**
+ * The remote control server (ie. C<guestfish --listen>).
+ */
 void
 rc_listen (void)
 {
@@ -340,7 +344,9 @@ rc_listen (void)
   /* This returns to 'fish.c', where it jumps to global cleanups and exits. */
 }
 
-/* Remote control client. */
+/**
+ * The remote control client (ie. C<guestfish --remote>).
+ */
 int
 rc_remote (int pid, const char *cmd, size_t argc, char *argv[],
            int exit_on_error)
