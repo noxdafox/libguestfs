@@ -30,6 +30,12 @@ ifelse(REDHAT,1,
   /usr/bin/qemu-nbd
   curl
   ethtool
+  util-linux
+  xterm
+
+  dnl Generally useful tools to use within xterm
+  less
+  vim-minimal
 
   dnl The hwdata package contains PCI IDs, used by virt-p2v to display
   dnl network vendor information (RHBZ#855059).
@@ -39,10 +45,9 @@ ifelse(REDHAT,1,
   pciutils
   hdparm
   smartmontools
-  util-linux
+  iscsi-initiator-utils
 
   dnl X11 environment
-  xterm
   /usr/bin/xinit
   /usr/bin/Xorg
   xorg-x11-drivers
@@ -72,12 +77,15 @@ ifelse(DEBIAN,1,
   qemu-utils
   curl
   ethtool
+  util-linux
+  xterm
+  less
+  vim-tiny
   hwdata
   pciutils
   hdparm
   smartmontools
-  util-linux
-  xterm
+  open-iscsi
   xorg
   xserver-xorg-video-all
   fonts-dejavu
@@ -97,12 +105,15 @@ ifelse(ARCHLINUX,1,
   qemu
   curl
   ethtool
+  util-linux
+  xterm
+  less
+  vim-tiny
   hwdata
   pciutils
   hdparm
   smartmontools
-  util-linux
-  xterm
+  open-iscsi
   xorg-xinit
   xorg-server
   xf86-video-*
@@ -123,12 +134,15 @@ ifelse(SUSE,1,
   openssh
   curl
   ethtool
+  util-linux
+  xterm
+  less
+  vim
   hwdata
   pciutils
   hdparm
   smartmontools
-  util-linux
-  xterm
+  open-iscsi
   xinit
   xorg-x11-server
   xf86-video-*
