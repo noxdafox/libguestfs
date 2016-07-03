@@ -3615,7 +3615,41 @@ This generally implies the metadata has been reallocated to a new file.
 Therefore, information such as file type and file size
 might not correspond with the ones of the original deleted entry.
 
+=item 0x0004
+
+The bit is set to C<1> when the file is compressed using filesystem
+native compression support (NTFS). The API is not able to detect
+application level compression.
+
 =back
+
+=item 'tsk_atime_sec'
+
+=item 'tsk_atime_nsec'
+
+=item 'tsk_mtime_sec'
+
+=item 'tsk_mtime_nsec'
+
+=item 'tsk_ctime_sec'
+
+=item 'tsk_ctime_nsec'
+
+=item 'tsk_crtime_sec'
+
+=item 'tsk_crtime_nsec'
+
+Respectively, access, modification, last status change and creation
+time in Unix format in seconds and nanoseconds.
+
+=item 'tsk_nlink'
+
+Number of file names pointing to this entry.
+
+=item 'tsk_link'
+
+If the entry is a symbolic link, this field will contain the path
+to the target file.
 
 =back
 

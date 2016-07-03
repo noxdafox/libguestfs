@@ -38,7 +38,8 @@
 enum tsk_dirent_flags {
   DIRENT_UNALLOC = 0x00,
   DIRENT_ALLOC = 0x01,
-  DIRENT_REALLOC = 0x02
+  DIRENT_REALLOC = 0x02,
+  DIRENT_COMPRESSED = 0x04
 };
 
 static int open_filesystem (const char *, TSK_IMG_INFO **, TSK_FS_INFO **);
@@ -108,6 +109,7 @@ fswalk_callback (TSK_FS_FILE *fsfile, const char *path, void *data)
 {
   int ret = 0;
   CLEANUP_FREE char *fname = NULL;
+  CLEANUP_FREE char *flink = NULL;
   struct guestfs_int_tsk_dirent dirent;
 
   /* Ignore ./ and ../ */
@@ -122,20 +124,38 @@ fswalk_callback (TSK_FS_FILE *fsfile, const char *path, void *data)
     return TSK_WALK_ERROR;
   }
 
+  /* Set dirent fields */
+  memset (&dirent, 0, sizeof dirent);
+
   dirent.tsk_inode = fsfile->name->meta_addr;
   dirent.tsk_type = file_type (fsfile);
   dirent.tsk_size = (fsfile->meta != NULL) ? fsfile->meta->size : -1;
   dirent.tsk_name = fname;
   dirent.tsk_flags = file_flags (fsfile);
-  dirent.tsk_spare1 = dirent.tsk_spare2 = dirent.tsk_spare3 =
-    dirent.tsk_spare4 = dirent.tsk_spare5 = dirent.tsk_spare6 =
-    dirent.tsk_spare7 = dirent.tsk_spare8 = dirent.tsk_spare9 =
-    dirent.tsk_spare10 = dirent.tsk_spare11 = 0;
+
+  if (fsfile->meta != NULL) {
+    dirent.tsk_nlink = fsfile->meta->nlink;
+    dirent.tsk_atime_sec = fsfile->meta->atime;
+    dirent.tsk_atime_nsec = fsfile->meta->atime_nano;
+    dirent.tsk_mtime_sec = fsfile->meta->mtime;
+    dirent.tsk_mtime_nsec = fsfile->meta->mtime_nano;
+    dirent.tsk_ctime_sec = fsfile->meta->ctime;
+    dirent.tsk_ctime_nsec = fsfile->meta->ctime_nano;
+    dirent.tsk_crtime_sec = fsfile->meta->crtime;
+    dirent.tsk_crtime_nsec = fsfile->meta->crtime_nano;
+
+    ret = asprintf (&flink, "%s", fsfile->meta->link);
+    if (ret < 0) {
+      perror ("asprintf");
+      return TSK_WALK_ERROR;
+    }
+
+    dirent.tsk_link = flink;
+  }
 
   ret = send_dirent_info (&dirent);
-  ret = (ret == 0) ? TSK_WALK_CONT : TSK_WALK_ERROR;
 
-  return ret;
+  return (ret == 0) ? TSK_WALK_CONT : TSK_WALK_ERROR;
 }
 
 /* Inspect fsfile to identify its type. */
@@ -175,7 +195,7 @@ file_type (TSK_FS_FILE *fsfile)
   return 'u';
 }
 
-/* Inspect fsfile to retrieve the file allocation state. */
+/* Inspect fsfile to retrieve file allocation and compression status. */
 static int
 file_flags (TSK_FS_FILE *fsfile)
 {
@@ -187,6 +207,9 @@ file_flags (TSK_FS_FILE *fsfile)
   }
   else
     flags |= DIRENT_ALLOC;
+
+  if (fsfile->meta && fsfile->meta->flags & TSK_FS_META_FLAG_COMP)
+    flags |= DIRENT_COMPRESSED;
 
   return flags;
 }
