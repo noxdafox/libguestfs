@@ -38,16 +38,12 @@
 #include "p2v.h"
 
 static void notify_ui_callback (int type, const char *data);
-static void run_command (int verbose, const char *stage, const char *command);
+static void run_command (const char *stage, const char *command);
 
 void
 update_config_from_kernel_cmdline (struct config *config, char **cmdline)
 {
   const char *p;
-
-  p = get_cmdline_key (cmdline, "p2v.debug");
-  if (p)
-    config->verbose = 1;
 
   p = get_cmdline_key (cmdline, "p2v.server");
   if (p) {
@@ -207,7 +203,7 @@ kernel_conversion (struct config *config, char **cmdline, int cmdline_source)
   /* Pre-conversion command. */
   p = get_cmdline_key (cmdline, "p2v.pre");
   if (p)
-    run_command (config->verbose, "p2v.pre", p);
+    run_command ("p2v.pre", p);
 
   /* Connect to and interrogate virt-v2v on the conversion server. */
   p = get_cmdline_key (cmdline, "p2v.skip_test_connection");
@@ -238,10 +234,15 @@ kernel_conversion (struct config *config, char **cmdline, int cmdline_source)
 
     p = get_cmdline_key (cmdline, "p2v.fail");
     if (p)
-      run_command (config->verbose, "p2v.fail", p);
+      run_command ("p2v.fail", p);
 
     exit (EXIT_FAILURE);
   }
+
+  ansi_green (stdout);
+  printf ("Conversion finished successfully.");
+  ansi_restore (stdout);
+  putchar ('\n');
 
   p = get_cmdline_key (cmdline, "p2v.post");
   if (!p) {
@@ -249,7 +250,7 @@ kernel_conversion (struct config *config, char **cmdline, int cmdline_source)
       p = "poweroff";
   }
   if (p)
-    run_command (config->verbose, "p2v.post", p);
+    run_command ("p2v.post", p);
 }
 
 static void
@@ -257,8 +258,12 @@ notify_ui_callback (int type, const char *data)
 {
   switch (type) {
   case NOTIFY_LOG_DIR:
-    printf ("%s: remote log directory location: %s\n",
-            guestfs_int_program_name, data);
+    ansi_magenta (stdout);
+    printf ("%s: remote log directory location: ", guestfs_int_program_name);
+    ansi_red (stdout);
+    fputs (data, stdout);
+    ansi_restore (stdout);
+    putchar ('\n');
     break;
 
   case NOTIFY_REMOTE_MESSAGE:
@@ -266,29 +271,35 @@ notify_ui_callback (int type, const char *data)
     break;
 
   case NOTIFY_STATUS:
-    printf ("%s: %s\n", guestfs_int_program_name, data);
+    ansi_magenta (stdout);
+    printf ("%s: %s", guestfs_int_program_name, data);
+    ansi_restore (stdout);
+    putchar ('\n');
     break;
 
   default:
-    printf ("%s: unknown message during conversion: type=%d data=%s\n",
+    ansi_red (stdout);
+    printf ("%s: unknown message during conversion: type=%d data=%s",
             guestfs_int_program_name, type, data);
+    ansi_restore (stdout);
+    putchar ('\n');
   }
 
   fflush (stdout);
 }
 
 static void
-run_command (int verbose, const char *stage, const char *command)
+run_command (const char *stage, const char *command)
 {
   int r;
 
   if (STREQ (command, ""))
     return;
 
-  if (verbose) {
-    printf ("%s\n", command);
-    fflush (stdout);
-  }
+#if DEBUG_STDERR
+  fprintf (stderr, "%s\n", command);
+  fflush (stderr);
+#endif
 
   r = system (command);
   if (r == -1)
