@@ -48,7 +48,7 @@ static char **
 convert_lvm_output (char *out, const char *prefix)
 {
   char *p, *pend;
-  DECLARE_STRINGSBUF (ret);
+  CLEANUP_FREE_STRINGSBUF DECLARE_STRINGSBUF (ret);
   size_t len;
   char buf[256];
   char *str;
@@ -100,7 +100,7 @@ convert_lvm_output (char *out, const char *prefix)
   if (end_stringsbuf (&ret) == -1)
     return NULL;
 
-  return ret.argv;
+  return take_stringsbuf (&ret);
 }
 
 /* Filter a colon-separated output of
@@ -113,7 +113,7 @@ static char **
 filter_convert_old_lvs_output (char *out)
 {
   char *p, *pend;
-  DECLARE_STRINGSBUF (ret);
+  CLEANUP_FREE_STRINGSBUF DECLARE_STRINGSBUF (ret);
 
   p = out;
   while (p) {
@@ -183,7 +183,7 @@ filter_convert_old_lvs_output (char *out)
   if (end_stringsbuf (&ret) == -1)
     return NULL;
 
-  return ret.argv;
+  return take_stringsbuf (&ret);
 }
 
 char **
@@ -863,9 +863,11 @@ lv_canonical (const char *device, char **ret)
 
 /* Test if a device is a logical volume (RHBZ#619793). */
 int
-do_is_lv (const char *device)
+do_is_lv (const mountable_t *mountable)
 {
-  return lv_canonical (device, NULL);
+  if (mountable->type != MOUNTABLE_DEVICE)
+    return 0;
+  return lv_canonical (mountable->device, NULL);
 }
 
 /* Return canonical name of LV to caller (RHBZ#638899). */
@@ -889,7 +891,7 @@ do_lvm_canonical_lv_name (const char *device)
 char **
 do_list_dm_devices (void)
 {
-  DECLARE_STRINGSBUF (ret);
+  CLEANUP_FREE_STRINGSBUF DECLARE_STRINGSBUF (ret);
   struct dirent *d;
   DIR *dir;
   int r;
@@ -917,7 +919,6 @@ do_list_dm_devices (void)
 
     if (asprintf (&devname, "/dev/mapper/%s", d->d_name) == -1) {
       reply_with_perror ("asprintf");
-      free_stringslen (ret.argv, ret.size);
       closedir (dir);
       return NULL;
     }
@@ -925,7 +926,6 @@ do_list_dm_devices (void)
     /* Ignore dm devices which are LVs. */
     r = lv_canonical (devname, NULL);
     if (r == -1) {
-      free_stringslen (ret.argv, ret.size);
       closedir (dir);
       return NULL;
     }
@@ -942,7 +942,6 @@ do_list_dm_devices (void)
   /* Did readdir fail? */
   if (errno != 0) {
     reply_with_perror ("readdir: /dev/mapper");
-    free_stringslen (ret.argv, ret.size);
     closedir (dir);
     return NULL;
   }
@@ -950,7 +949,6 @@ do_list_dm_devices (void)
   /* Close the directory handle. */
   if (closedir (dir) == -1) {
     reply_with_perror ("closedir: /dev/mapper");
-    free_stringslen (ret.argv, ret.size);
     return NULL;
   }
 
@@ -962,7 +960,7 @@ do_list_dm_devices (void)
   if (end_stringsbuf (&ret) == -1)
     return NULL;
 
-  return ret.argv;
+  return take_stringsbuf (&ret);
 }
 
 char *
