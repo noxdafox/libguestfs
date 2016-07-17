@@ -33,8 +33,7 @@ SOURCES_ML = \
 	dib.ml
 
 SOURCES_C = \
-	../mllib/dev_t-c.c \
-	../mllib/mkdtemp-c.c
+	dummy.c
 
 bin_PROGRAMS =
 
@@ -55,13 +54,6 @@ virt_dib_CFLAGS = \
 	$(WARN_CFLAGS) $(WERROR_CFLAGS)
 
 BOBJECTS = \
-	$(OCAML_BYTES_COMPAT_CMO) \
-	$(top_builddir)/mllib/libdir.cmo \
-	$(top_builddir)/mllib/guestfs_config.cmo \
-	$(top_builddir)/mllib/common_gettext.cmo \
-	$(top_builddir)/mllib/dev_t.cmo \
-	$(top_builddir)/mllib/common_utils.cmo \
-	$(top_builddir)/mllib/mkdtemp.cmo \
 	$(SOURCES_ML:.ml=.cmo)
 XOBJECTS = $(BOBJECTS:.cmo=.cmx)
 
@@ -81,6 +73,7 @@ endif
 OCAMLCLIBS = \
 	-pthread -lpthread \
 	-lutils \
+	$(LIBXML2_LIBS) \
 	$(LIBINTL) \
 	-lgnu
 
@@ -89,11 +82,11 @@ OCAMLFLAGS = $(OCAML_FLAGS) $(OCAML_WARN_ERROR)
 if !HAVE_OCAMLOPT
 OBJECTS = $(BOBJECTS)
 BEST    = c
-OCAMLLINKFLAGS = mlguestfs.cma -custom
+OCAMLLINKFLAGS = mlguestfs.cma mllib.cma -custom
 else
 OBJECTS = $(XOBJECTS)
 BEST    = opt
-OCAMLLINKFLAGS = mlguestfs.cmxa
+OCAMLLINKFLAGS = mlguestfs.cmxa mllib.cmxa
 endif
 
 virt_dib_DEPENDENCIES = $(OBJECTS) $(top_srcdir)/ocaml-link.sh

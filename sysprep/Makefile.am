@@ -80,13 +80,7 @@ SOURCES_ML = \
 	main.ml
 
 SOURCES_C = \
-	../mllib/dev_t-c.c \
-	../mllib/uri-c.c \
-	../mllib/mkdtemp-c.c \
-	../customize/crypt-c.c \
-	../customize/perl_edit-c.c \
-	../fish/uri.c \
-	../fish/file-edit.c
+	dummy.c
 
 if HAVE_OCAML
 
@@ -104,29 +98,7 @@ virt_sysprep_CFLAGS = \
 	$(WARN_CFLAGS) $(WERROR_CFLAGS) \
 	$(LIBXML2_CFLAGS)
 
-BOBJECTS = \
-	$(OCAML_BYTES_COMPAT_CMO) \
-	$(top_builddir)/mllib/guestfs_config.cmo \
-	$(top_builddir)/mllib/common_gettext.cmo \
-	$(top_builddir)/mllib/dev_t.cmo \
-	$(top_builddir)/mllib/common_utils.cmo \
-	$(top_builddir)/mllib/URI.cmo \
-	$(top_builddir)/mllib/mkdtemp.cmo \
-	$(top_builddir)/mllib/regedit.cmo \
-	$(top_builddir)/customize/customize_utils.cmo \
-	$(top_builddir)/customize/crypt.cmo \
-	$(top_builddir)/customize/urandom.cmo \
-	$(top_builddir)/customize/password.cmo \
-	$(top_builddir)/customize/random_seed.cmo \
-	$(top_builddir)/customize/hostname.cmo \
-	$(top_builddir)/customize/timezone.cmo \
-	$(top_builddir)/customize/firstboot.cmo \
-	$(top_builddir)/customize/perl_edit.cmo \
-	$(top_builddir)/customize/ssh_key.cmo \
-	$(top_builddir)/customize/subscription_manager.cmo \
-	$(top_builddir)/customize/customize_cmdline.cmo \
-	$(top_builddir)/customize/customize_run.cmo \
-	$(SOURCES_ML:.ml=.cmo)
+BOBJECTS = $(SOURCES_ML:.ml=.cmo)
 XOBJECTS = $(BOBJECTS:.cmo=.cmx)
 
 # -I $(top_builddir)/src/.libs is a hack which forces corresponding -L
@@ -156,11 +128,11 @@ OCAMLFLAGS = $(OCAML_FLAGS) $(OCAML_WARN_ERROR)
 if !HAVE_OCAMLOPT
 OBJECTS = $(BOBJECTS)
 BEST    = c
-OCAMLLINKFLAGS = mlguestfs.cma -custom
+OCAMLLINKFLAGS = mlguestfs.cma mllib.cma customize.cma -custom
 else
 OBJECTS = $(XOBJECTS)
 BEST    = opt
-OCAMLLINKFLAGS = mlguestfs.cmxa
+OCAMLLINKFLAGS = mlguestfs.cmxa mllib.cmxa customize.cmxa
 endif
 
 virt_sysprep_DEPENDENCIES = $(OBJECTS) $(top_srcdir)/ocaml-link.sh

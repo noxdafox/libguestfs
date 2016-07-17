@@ -254,17 +254,11 @@ val parse_resize : int64 -> string -> int64
 val human_size : int64 -> string
 (** Converts a size in bytes to a human-readable string. *)
 
-val skip_dashes : string -> string
-(** Skip any leading '-' characters when comparing command line args. *)
-
-val compare_command_line_args : string -> string -> int
-(** Compare command line arguments for equality, ignoring any leading [-]s. *)
-
-val set_standard_options : (Arg.key * Arg.spec * Arg.doc) list -> (Arg.key * Arg.spec * Arg.doc) list
+val create_standard_options : Getopt.speclist -> ?anon_fun:Getopt.anon_fun -> Getopt.usage_msg -> Getopt.t
 (** Adds the standard libguestfs command line options to the specified ones,
     sorting them, and setting [long_options] to them.
 
-    Returns the resulting options. *)
+    Returns a new [Getopt.t] handle. *)
 
 val compare_version : string -> string -> int
 (** Compare two version strings. *)
@@ -317,6 +311,20 @@ val rm_rf_only_files : Guestfs.guestfs -> ?filter:(string -> bool) -> string -> 
 val truncate_recursive : Guestfs.guestfs -> string -> unit
 (** Using the libguestfs API, recurse into the given directory and
     truncate all files found to zero size. *)
+
+val debug_augeas_errors : Guestfs.guestfs -> unit
+(** In verbose mode, any Augeas errors which happened most recently
+    on the handle and printed on standard error.  You should usually
+    call this just after either [g#aug_init] or [g#aug_load].
+
+    Note this doesn't call {!error} if there were any errors on the
+    handle.  It is just for debugging.  It is expected that a
+    subsequent Augeas command will fail, eg. when trying to match
+    an Augeas path which is expected to exist but does not exist
+    because of a parsing error.  In that case turning on debugging
+    will reveal the parse error.
+
+    If not in verbose mode, this does nothing. *)
 
 val detect_file_type : string -> [`GZip | `Tar | `XZ | `Zip | `Unknown]
 (** Detect type of a file (for a very limited range of file types). *)

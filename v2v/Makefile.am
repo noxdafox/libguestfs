@@ -51,7 +51,6 @@ SOURCES_MLI = \
 	output_rhev.mli \
 	output_vdsm.mli \
 	OVF.mli \
-	stringMap.mli \
 	target_bus_assignment.mli \
 	types.mli \
 	utils.mli \
@@ -61,7 +60,6 @@ SOURCES_MLI = \
 	xml.mli
 
 SOURCES_ML = \
-	stringMap.ml \
 	types.ml \
 	xml.ml \
 	utils.ml \
@@ -96,9 +94,6 @@ SOURCES_ML = \
 	v2v.ml
 
 SOURCES_C = \
-	../mllib/dev_t-c.c \
-	../mllib/mkdtemp-c.c \
-	../mllib/statvfs-c.c \
 	domainxml-c.c \
 	changeuid-c.c \
 	utils-c.c \
@@ -120,18 +115,9 @@ virt_v2v_CFLAGS = \
 	$(LIBVIRT_CFLAGS)
 
 BOBJECTS = \
-	$(OCAML_BYTES_COMPAT_CMO) \
-	$(top_builddir)/mllib/guestfs_config.cmo \
-	$(top_builddir)/mllib/common_gettext.cmo \
-	$(top_builddir)/mllib/dev_t.cmo \
-	$(top_builddir)/mllib/common_utils.cmo \
-	$(top_builddir)/mllib/regedit.cmo \
-	$(top_builddir)/mllib/mkdtemp.cmo \
-	$(top_builddir)/mllib/JSON.cmo \
-	$(top_builddir)/mllib/StatVFS.cmo \
-	$(top_builddir)/mllib/curl.cmo \
 	$(top_builddir)/customize/customize_utils.cmo \
 	$(top_builddir)/customize/firstboot.cmo \
+	$(top_builddir)/customize/SELinux_relabel.cmo \
 	$(SOURCES_ML:.ml=.cmo)
 XOBJECTS = $(BOBJECTS:.cmo=.cmx)
 
@@ -161,11 +147,11 @@ OCAMLFLAGS = $(OCAML_FLAGS) $(OCAML_WARN_ERROR)
 if !HAVE_OCAMLOPT
 OBJECTS = $(BOBJECTS)
 BEST    = c
-OCAMLLINKFLAGS = mlguestfs.cma -custom
+OCAMLLINKFLAGS = mlguestfs.cma mllib.cma -custom
 else
 OBJECTS = $(XOBJECTS)
 BEST    = opt
-OCAMLLINKFLAGS = mlguestfs.cmxa
+OCAMLLINKFLAGS = mlguestfs.cmxa mllib.cmxa
 endif
 
 virt_v2v_DEPENDENCIES = $(OBJECTS) $(top_srcdir)/ocaml-link.sh
@@ -175,8 +161,6 @@ virt_v2v_LINK = \
 	  $(OBJECTS) -o $@
 
 virt_v2v_copy_to_local_SOURCES = \
-	../mllib/dev_t-c.c \
-	../mllib/statvfs-c.c \
 	domainxml-c.c \
 	utils-c.c \
 	xml-c.c
@@ -191,14 +175,6 @@ virt_v2v_copy_to_local_CFLAGS = \
 	$(LIBVIRT_CFLAGS)
 
 COPY_TO_LOCAL_BOBJECTS = \
-	$(OCAML_BYTES_COMPAT_CMO) \
-	$(top_builddir)/mllib/guestfs_config.cmo \
-	$(top_builddir)/mllib/common_gettext.cmo \
-	$(top_builddir)/mllib/dev_t.cmo \
-	$(top_builddir)/mllib/common_utils.cmo \
-	$(top_builddir)/mllib/JSON.cmo \
-	$(top_builddir)/mllib/StatVFS.cmo \
-	$(top_builddir)/mllib/curl.cmo \
 	xml.cmo \
 	utils.cmo \
 	vCenter.cmo \
@@ -405,13 +381,6 @@ check_PROGRAMS += v2v_unit_tests
 endif
 
 v2v_unit_tests_BOBJECTS = \
-	$(OCAML_BYTES_COMPAT_CMO) \
-	$(top_builddir)/mllib/guestfs_config.cmo \
-	$(top_builddir)/mllib/common_gettext.cmo \
-	$(top_builddir)/mllib/dev_t.cmo \
-	$(top_builddir)/mllib/common_utils.cmo \
-	$(top_builddir)/mllib/regedit.cmo \
-	stringMap.cmo \
 	types.cmo \
 	xml.cmo \
 	utils.cmo \
