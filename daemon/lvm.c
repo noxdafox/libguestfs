@@ -255,7 +255,7 @@ do_lvs (void)
   char *out;
   CLEANUP_FREE char *err = NULL;
   int r;
-  int has_S = test_lvs_has_S_opt ();
+  const int has_S = test_lvs_has_S_opt ();
 
   if (has_S < 0)
     return NULL;
@@ -264,7 +264,7 @@ do_lvs (void)
     r = command (&out, &err,
                  str_lvm, "lvs",
                  "-o", "vg_name,lv_name",
-                 "-S", "lv_role=public && lv_active=active",
+                 "-S", "lv_role=public && lv_skip_activation!=1",
                  "--noheadings",
                  "--separator", "/", NULL);
     if (r == -1) {

@@ -33,8 +33,14 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 
-#pragma GCC diagnostic ignored "-Wstrict-prototypes" /* error in <gtk.h> */
+/* errors in <gtk.h> */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wstrict-prototypes"
+#if defined(__GNUC__) && __GNUC__ >= 6 /* gcc >= 6 */
+#pragma GCC diagnostic ignored "-Wshift-overflow"
+#endif
 #include <gtk/gtk.h>
+#pragma GCC diagnostic pop
 
 #include "ignore-value.h"
 #include "p2v.h"
@@ -55,7 +61,7 @@ static void find_all_interfaces (void);
 static int cpuinfo_flags (void);
 
 enum { HELP_OPTION = CHAR_MAX + 1 };
-static const char *options = "Vv";
+static const char options[] = "Vv";
 static const struct option long_options[] = {
   { "help", 0, 0, HELP_OPTION },
   { "cmdline", 1, 0, 0 },
@@ -86,7 +92,7 @@ usage (int status)
               "Options:\n"
               "  --help                 Display brief help\n"
               " --cmdline=CMDLINE       Used to debug command line parsing\n"
-              " --colours               Use ANSI colour sequences even if not tty\n"
+              " --colors|--colours      Use ANSI colour sequences even if not tty\n"
               " --iso                   Running in the ISO environment\n"
               " --test-disk=DISK.IMG    For testing, use disk as /dev/sda\n"
               "  -v|--verbose           Verbose messages\n"

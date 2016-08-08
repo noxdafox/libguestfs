@@ -22,6 +22,7 @@ open Printf
 
 open Common_gettext.Gettext
 open Common_utils
+open Getopt.OptionName
 
 open Utils
 
@@ -64,16 +65,16 @@ let parse_cmdline () =
   let zeroes = ref [] in
 
   let argspec = [
-    [ "--check-tmpdir" ], Getopt.String ("ignore|...", set_check_tmpdir),  s_"Check there is enough space in $TMPDIR";
-    [ "--compress" ], Getopt.Set compress,         s_"Compressed output format";
-    [ "--convert" ], Getopt.Set_string (s_"format", convert),    s_"Format of output disk (default: same as input)";
-    [ "--format" ],  Getopt.Set_string (s_"format", format),     s_"Format of input disk";
-    [ "--ignore" ],  Getopt.String (s_"fs", add ignores),  s_"Ignore filesystem";
-    [ "--in-place"; "--inplace" ], Getopt.Set in_place,         s_"Modify the disk image in-place";
-    [ "--machine-readable" ], Getopt.Set machine_readable, s_"Make output machine readable";
-    [ "-o" ],        Getopt.Set_string (s_"option", option),     s_"Add qemu-img options";
-    [ "--tmp" ],     Getopt.Set_string (s_"block|dir|prebuilt:file", tmp),        s_"Set temporary block device, directory or prebuilt file";
-    [ "--zero" ],    Getopt.String (s_"fs", add zeroes),   s_"Zero filesystem";
+    [ L"check-tmpdir" ], Getopt.String ("ignore|...", set_check_tmpdir),  s_"Check there is enough space in $TMPDIR";
+    [ L"compress" ], Getopt.Set compress,         s_"Compressed output format";
+    [ L"convert" ], Getopt.Set_string (s_"format", convert),    s_"Format of output disk (default: same as input)";
+    [ L"format" ],  Getopt.Set_string (s_"format", format),     s_"Format of input disk";
+    [ L"ignore" ],  Getopt.String (s_"fs", add ignores),  s_"Ignore filesystem";
+    [ L"in-place"; L"inplace" ], Getopt.Set in_place,         s_"Modify the disk image in-place";
+    [ L"machine-readable" ], Getopt.Set machine_readable, s_"Make output machine readable";
+    [ S 'o' ],        Getopt.Set_string (s_"option", option),     s_"Add qemu-img options";
+    [ L"tmp" ],     Getopt.Set_string (s_"block|dir|prebuilt:file", tmp),        s_"Set temporary block device, directory or prebuilt file";
+    [ L"zero" ],    Getopt.String (s_"fs", add zeroes),   s_"Zero filesystem";
   ] in
   let disks = ref [] in
   let anon_fun s = push_front s disks in
@@ -141,11 +142,7 @@ read the man page virt-sparsify(1).
       (* The input disk must be an absolute path, so we can store the name
        * in the overlay disk.
        *)
-      let indisk =
-        if not (Filename.is_relative indisk) then
-          indisk
-        else
-          Sys.getcwd () // indisk in
+      let indisk = absolute_path indisk in
 
       (* Check the output is not a char special (RHBZ#1056290). *)
       if is_char_device outdisk then

@@ -95,7 +95,6 @@ SOURCES_ML = \
 
 SOURCES_C = \
 	domainxml-c.c \
-	changeuid-c.c \
 	utils-c.c \
 	xml-c.c
 
@@ -146,13 +145,11 @@ OCAMLFLAGS = $(OCAML_FLAGS) $(OCAML_WARN_ERROR)
 
 if !HAVE_OCAMLOPT
 OBJECTS = $(BOBJECTS)
-BEST    = c
-OCAMLLINKFLAGS = mlguestfs.cma mllib.cma -custom
 else
 OBJECTS = $(XOBJECTS)
-BEST    = opt
-OCAMLLINKFLAGS = mlguestfs.cmxa mllib.cmxa
 endif
+
+OCAMLLINKFLAGS = mlguestfs.$(MLARCHIVE) mllib.$(MLARCHIVE) $(LINK_CUSTOM_OCAMLC_ONLY)
 
 virt_v2v_DEPENDENCIES = $(OBJECTS) $(top_srcdir)/ocaml-link.sh
 virt_v2v_LINK = \
@@ -189,7 +186,9 @@ COPY_TO_LOCAL_OBJECTS = $(COPY_TO_LOCAL_XOBJECTS)
 endif
 
 virt_v2v_copy_to_local_DEPENDENCIES = \
-	$(COPY_TO_LOCAL_OBJECTS) $(top_srcdir)/ocaml-link.sh
+	$(COPY_TO_LOCAL_OBJECTS) \
+	../mllib/mllib.$(MLARCHIVE) \
+	$(top_srcdir)/ocaml-link.sh
 virt_v2v_copy_to_local_LINK = \
 	$(top_srcdir)/ocaml-link.sh -cclib '$(OCAMLCLIBS)' -- \
 	  $(OCAMLFIND) $(BEST) $(OCAMLFLAGS) $(OCAMLPACKAGES) $(OCAMLLINKFLAGS) \
@@ -254,6 +253,7 @@ CLEANFILES += \
 TESTS_ENVIRONMENT = $(top_builddir)/run --test
 
 TESTS = \
+	test-v2v-docs.sh \
 	test-v2v-i-ova-formats.sh \
 	test-v2v-i-ova-gz.sh \
 	test-v2v-i-ova-subfolders.sh \
@@ -332,6 +332,7 @@ EXTRA_DIST += \
 	test-v2v-cdrom.sh \
 	test-v2v-cdrom.xml \
 	test-v2v-copy-to-local.sh \
+	test-v2v-docs.sh \
 	test-v2v-floppy.expected \
 	test-v2v-floppy.sh \
 	test-v2v-floppy.xml \
@@ -405,7 +406,10 @@ v2v_unit_tests_THEOBJECTS = $(v2v_unit_tests_XOBJECTS)
 v2v_unit_tests.cmx: OCAMLPACKAGES += -package oUnit
 endif
 
-v2v_unit_tests_DEPENDENCIES = $(v2v_unit_tests_THEOBJECTS) $(top_srcdir)/ocaml-link.sh
+v2v_unit_tests_DEPENDENCIES = \
+	$(v2v_unit_tests_THEOBJECTS) \
+	../mllib/mllib.$(MLARCHIVE) \
+	$(top_srcdir)/ocaml-link.sh
 v2v_unit_tests_LINK = \
 	$(top_srcdir)/ocaml-link.sh -cclib '$(OCAMLCLIBS)' -- \
 	  $(OCAMLFIND) $(BEST) $(OCAMLFLAGS) \

@@ -32,12 +32,12 @@ fi
 version=$1
 output=rhel-$version-ppc64le
 tmpname=tmp-$(tr -cd 'a-f0-9' < /dev/urandom | head -c 8)
-guestroot=/dev/rhel-l/root
+guestroot=/dev/rhel/root
 
 case $version in
     7.*)
         major=7
-        topurl=http://download.devel.redhat.com/released/RHEL-LE-$major/$version
+        topurl=http://download.devel.redhat.com/released/RHEL-$major/$version
         tree=$topurl/Server/ppc64le/os
         baseurl=$tree
         srpms=$topurl/Server/source/tree

@@ -10851,6 +10851,10 @@ filesystem, the host filesystem, qemu and the host kernel.
 If this support isn't present it may give an error or even
 appear to run but do nothing.
 
+In the case where the kernel vfs driver does not support
+trimming, this call will fail with errno set to C<ENOTSUP>.
+Currently this happens when trying to trim FAT filesystems.
+
 See also C<guestfs_zero_free_space>.  That is a slightly
 different operation that turns free space in the filesystem
 into zeroes.  It is valid to call C<guestfs_fstrim> either
@@ -13176,6 +13180,30 @@ to relabel the whole guest filesystem.
 The optional C<force> boolean controls whether the context
 is reset for customizable files, and also whether the
 user, role and range parts of the file context is changed." };
+
+  { defaults with
+    name = "download_blocks"; added = (1, 33, 45);
+    style = RErr, [Mountable "device"; Int64 "start"; Int64 "stop"; FileOut "filename"], [OBool "unallocated"];
+    proc_nr = Some 468;
+    optional = Some "sleuthkit";
+    progress = true; cancellable = true;
+    shortdesc = "download the given data units from the disk";
+    longdesc = "\
+Download the data units from F<start> address
+to F<stop> from the disk partition (eg. F</dev/sda1>)
+and save them as F<filename> on the local machine.
+
+The use of this API on sparse disk image formats such as QCOW,
+may result in large zero-filled files downloaded on the host.
+
+The size of a data unit varies across filesystem implementations.
+On NTFS filesystems data units are referred as clusters
+while on ExtX ones they are referred as fragments.
+
+If the optional C<unallocated> flag is true (default is false),
+only the unallocated blocks will be extracted.
+This is useful to detect hidden data or to retrieve deleted files
+which data units have not been overwritten yet." };
 
 ]
 

@@ -30,6 +30,8 @@
 #include <error.h>
 #include <assert.h>
 
+#include "xstrtol.h"
+
 #include <caml/alloc.h>
 #include <caml/fail.h>
 #include <caml/memory.h>
@@ -67,8 +69,8 @@ cleanup_option_list (void *ptr)
 static void __attribute__((noreturn))
 show_error (int status)
 {
-  fprintf (stderr, _("Try `%s --help' for more information.\n"),
-           guestfs_int_program_name);
+  fprintf (stderr, _("Try `%s --help' or consult %s(1) for more information.\n"),
+           guestfs_int_program_name, guestfs_int_program_name);
   exit (status);
 }
 
@@ -101,6 +103,69 @@ find_spec (value specsv, int specs_len, char opt)
   CAMLreturnT (int, ret);
 }
 
+static bool
+list_mem (value listv, const char *val)
+{
+  CAMLparam1 (listv);
+  CAMLlocal1 (hd);
+  bool found = false;
+
+  while (listv != Val_emptylist) {
+    hd = Field (listv, 0);
+    if (STREQ (String_val (hd), val)) {
+      found = true;
+      break;
+    }
+    listv = Field (listv, 1);
+  }
+
+  CAMLreturnT (bool, found);
+}
+
+static bool
+vector_has_dashdash_opt (value vectorv, const char *opt)
+{
+  CAMLparam1 (vectorv);
+  bool found = false;
+  int len, i;
+
+  len = Wosize_val (vectorv);
+
+  for (i = 0; i < len; ++i) {
+    const char *key = String_val (Field (vectorv, i));
+
+    ++key;
+    if (key[0] == '-')
+      ++key;
+
+    if (STREQ (opt, key)) {
+      found = true;
+      break;
+    }
+  }
+
+  CAMLreturnT (bool, found);
+}
+
+static void
+list_print (FILE *stream, value listv)
+{
+  CAMLparam1 (listv);
+  CAMLlocal1 (hd);
+  bool first = true;
+
+  while (listv != Val_emptylist) {
+    hd = Field (listv, 0);
+    if (!first)
+      fprintf (stream, ", ");
+    fprintf (stream, "%s", String_val (hd));
+    first = false;
+    listv = Field (listv, 1);
+  }
+
+  CAMLreturn0;
+}
+
 static void
 do_call1 (value funv, value paramv)
 {
@@ -115,6 +180,26 @@ do_call1 (value funv, value paramv)
              caml_format_exception (Extract_exception (rv)));
 
   CAMLreturn0;
+}
+
+static int
+strtoint (const char *arg)
+{
+  long int num;
+
+  if (xstrtol (arg, NULL, 0, &num, "") != LONGINT_OK) {
+    fprintf (stderr, _("%s: '%s' is not a numeric value.\n"),
+             guestfs_int_program_name, arg);
+    show_error (EXIT_FAILURE);
+  }
+
+  if (num < -(1<<30) || num > (1<<30)-1) {
+    fprintf (stderr, _("%s: %s: integer out of range\n"),
+             guestfs_int_program_name, arg);
+    show_error (EXIT_FAILURE);
+  }
+
+  return (int) num;
 }
 
 value
@@ -164,7 +249,7 @@ guestfs_int_mllib_getopt_parse (value argsv, value specsv, value anon_funv, valu
 
     for (j = 0; j < len; ++j) {
       const char *key = String_val (Field (keysv, j));
-      size_t key_len = strlen (key);
+      const size_t key_len = strlen (key);
       int has_arg = 0;
 
       /* We assume that the key is valid, with the checks done in the
@@ -184,6 +269,7 @@ guestfs_int_mllib_getopt_parse (value argsv, value specsv, value anon_funv, valu
       case 4:  /* Set_string of string * string ref */
       case 5:  /* Int of string * (int -> unit) */
       case 6:  /* Set_int of string * int ref */
+      case 7:  /* Symbol of string * string list * (string -> unit) */
         has_arg = 1;
         break;
 
@@ -274,22 +360,36 @@ guestfs_int_mllib_getopt_parse (value argsv, value specsv, value anon_funv, valu
       break;
 
     case 5:  /* Int of string * (int -> unit) */
-      if (sscanf (optarg, "%d", &num) != 1) {
-        fprintf (stderr, _("'%s' is not a numeric value.\n"),
-                 guestfs_int_program_name);
-        show_error (EXIT_FAILURE);
-      }
+      num = strtoint (optarg);
       v = Field (actionv, 1);
       do_call1 (v, Val_int (num));
       break;
 
     case 6:  /* Set_int of string * int ref */
-      if (sscanf (optarg, "%d", &num) != 1) {
-        fprintf (stderr, _("'%s' is not a numeric value.\n"),
-                 guestfs_int_program_name);
+      num = strtoint (optarg);
+      caml_modify (&Field (Field (actionv, 1), 0), Val_int (num));
+      break;
+
+    case 7:  /* Symbol of string * string list * (string -> unit) */
+      v = Field (actionv, 1);
+      if (!list_mem (v, optarg)) {
+        if (c != 0) {
+          fprintf (stderr, _("%s: '%s' is not allowed for -%c; allowed values are:\n"),
+                   guestfs_int_program_name, optarg, c);
+        } else {
+          fprintf (stderr, _("%s: '%s' is not allowed for %s%s; allowed values are:\n"),
+                   guestfs_int_program_name, optarg,
+                   vector_has_dashdash_opt (specv, longopts[option_index].name) ? "--" : "-",
+                   longopts[option_index].name);
+        }
+        fprintf (stderr, "  ");
+        list_print (stderr, v);
+        fprintf (stderr, "\n");
         show_error (EXIT_FAILURE);
       }
-      caml_modify (&Field (Field (actionv, 1), 0), Val_int (num));
+      v = Field (actionv, 2);
+      v2 = caml_copy_string (optarg);
+      do_call1 (v, v2);
       break;
 
     default:

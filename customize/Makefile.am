@@ -22,6 +22,7 @@ EXTRA_DIST = \
 	$(SOURCES_MLI) $(SOURCES_ML) $(SOURCES_C) \
 	customize_main.ml \
 	test-virt-customize.sh \
+	test-virt-customize-docs.sh \
 	virt-customize.pod
 
 CLEANFILES = \
@@ -130,7 +131,7 @@ endif
 libcustomize_a_DEPENDENCIES = $(OBJECTS)
 
 $(CUSTOMIZE_CMA): $(OBJECTS) libcustomize.a
-	$(OCAMLFIND) mklib -g $(OCAMLPACKAGES) \
+	$(OCAMLFIND) mklib $(OCAMLPACKAGES) \
 	    $(OBJECTS) $(libcustomize_a_OBJECTS) -o customize
 
 # Build the virt-customize program.
@@ -139,17 +140,15 @@ bin_PROGRAMS = virt-customize
 virt_customize_SOURCES = dummy.c
 
 CUSTOMIZE_BOBJECTS = customize_main.cmo
-CUSTOMIZE_XOBJECTS = $(BOBJECTS:.cmo=.cmx)
+CUSTOMIZE_XOBJECTS = $(CUSTOMIZE_BOBJECTS:.cmo=.cmx)
 
 if !HAVE_OCAMLOPT
 CUSTOMIZE_THEOBJECTS = $(CUSTOMIZE_BOBJECTS)
-BEST    = c
-OCAMLLINKFLAGS = mlguestfs.cma mllib.cma customize.cma -custom
 else
 CUSTOMIZE_THEOBJECTS = $(CUSTOMIZE_XOBJECTS)
-BEST    = opt
-OCAMLLINKFLAGS = mlguestfs.cmxa mllib.cmxa customize.cmxa
 endif
+
+OCAMLLINKFLAGS = mlguestfs.$(MLARCHIVE) mllib.$(MLARCHIVE) customize.$(MLARCHIVE) $(LINK_CUSTOM_OCAMLC_ONLY)
 
 OCAMLCLIBS = \
 	-lutils \
@@ -165,7 +164,8 @@ OCAMLFLAGS = $(OCAML_FLAGS) $(OCAML_WARN_ERROR)
 virt_customize_DEPENDENCIES = \
 	$(top_srcdir)/ocaml-link.sh \
 	$(CUSTOMIZE_THEOBJECTS) \
-	$(CUSTOMIZE_CMA)
+	$(CUSTOMIZE_CMA) \
+	../mllib/mllib.$(MLARCHIVE)
 virt_customize_LINK = \
 	$(top_srcdir)/ocaml-link.sh -cclib '$(OCAMLCLIBS)' -- \
 	  $(OCAMLFIND) $(BEST) $(OCAMLFLAGS) $(OCAMLPACKAGES) $(OCAMLLINKFLAGS) \
@@ -192,8 +192,12 @@ stamp-virt-customize.pod: virt-customize.pod $(top_srcdir)/customize/customize-s
 
 TESTS_ENVIRONMENT = $(top_builddir)/run --test
 
+TESTS = \
+	test-virt-customize-docs.sh
+
 if ENABLE_APPLIANCE
-TESTS = test-virt-customize.sh
+TESTS += \
+	test-virt-customize.sh
 endif
 
 check-valgrind:

@@ -19,9 +19,11 @@ include $(top_srcdir)/subdir-rules.mk
 
 EXTRA_DIST = \
 	$(SOURCES_MLI) $(SOURCES_ML) $(SOURCES_C) \
-	virt-sparsify.pod \
 	test-virt-sparsify.sh \
-	test-virt-sparsify-in-place.sh
+	test-virt-sparsify-docs.sh \
+	test-virt-sparsify-in-place.sh \
+	test-virt-sparsify-in-place-fstrim-unsupported.sh \
+	virt-sparsify.pod
 
 CLEANFILES = *~ *.annot *.cmi *.cmo *.cmx *.cmxa *.o virt-sparsify
 
@@ -79,16 +81,16 @@ OCAMLFLAGS = $(OCAML_FLAGS) $(OCAML_WARN_ERROR)
 
 if !HAVE_OCAMLOPT
 OBJECTS = $(BOBJECTS)
-BEST    = c
-OCAMLLINKFLAGS = mlguestfs.cma mllib.cma -custom
 else
 OBJECTS = $(XOBJECTS)
-BEST    = opt
-OCAMLLINKFLAGS = mlguestfs.cmxa mllib.cmxa
 endif
 
-virt_sparsify_DEPENDENCIES = $(OBJECTS) $(top_srcdir)/ocaml-link.sh
+OCAMLLINKFLAGS = mlguestfs.$(MLARCHIVE) mllib.$(MLARCHIVE) $(LINK_CUSTOM_OCAMLC_ONLY)
 
+virt_sparsify_DEPENDENCIES = \
+	$(OBJECTS) \
+	../mllib/mllib.$(MLARCHIVE) \
+	$(top_srcdir)/ocaml-link.sh
 virt_sparsify_LINK = \
 	$(top_srcdir)/ocaml-link.sh -cclib '$(OCAMLCLIBS)' -- \
 	  $(OCAMLFIND) $(BEST) $(OCAMLFLAGS) $(OCAMLPACKAGES) $(OCAMLLINKFLAGS) \
@@ -119,10 +121,14 @@ CLEANFILES += \
 
 TESTS_ENVIRONMENT = $(top_builddir)/run --test
 
-if ENABLE_APPLIANCE
 TESTS = \
+	test-virt-sparsify-docs.sh
+
+if ENABLE_APPLIANCE
+TESTS += \
 	test-virt-sparsify.sh \
-	test-virt-sparsify-in-place.sh
+	test-virt-sparsify-in-place.sh \
+	test-virt-sparsify-in-place-fstrim-unsupported.sh
 endif ENABLE_APPLIANCE
 
 check-valgrind:

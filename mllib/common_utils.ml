@@ -19,6 +19,7 @@
 open Printf
 
 open Common_gettext.Gettext
+open Getopt.OptionName
 
 module Char = struct
     include Char
@@ -140,6 +141,8 @@ module String = struct
         ) [1;2;3;4;5;6;7;8]
       )
 end
+
+exception Executable_not_found of string (* executable *)
 
 let (//) = Filename.concat
 
@@ -314,6 +317,18 @@ let protect ~f ~finally =
     with exn -> Or exn in
   finally ();
   match r with Either ret -> ret | Or exn -> raise exn
+
+let which executable =
+  let paths = String.nsplit ":" (Sys.getenv "PATH") in
+  let paths = filter_map (
+    fun p ->
+      let path = p // executable in
+      try Unix.access path [Unix.X_OK]; Some path
+      with Unix.Unix_error _ -> None
+  ) paths in
+  match paths with
+  | [] -> raise (Executable_not_found executable)
+  | x :: _ -> x
 
 (* Program name. *)
 let prog = Filename.basename Sys.executable_name
@@ -571,13 +586,13 @@ let create_standard_options argspec ?anon_fun usage_msg =
   let set_debug_gc () =
     at_exit (fun () -> Gc.compact()) in
   let argspec = [
-    [ "-V"; "--version" ], Getopt.Unit print_version_and_exit, s_"Display version and exit";
-    [ "-v"; "--verbose" ], Getopt.Unit set_verbose,  s_"Enable libguestfs debugging messages";
-    [ "-x" ],              Getopt.Unit set_trace,    s_"Enable tracing of libguestfs calls";
-    [ "--debug-gc" ],      Getopt.Unit set_debug_gc, Getopt.hidden_option_description;
-    [ "-q"; "--quiet" ],   Getopt.Unit set_quiet,    s_"Don't print progress messages";
-    [ "--color"; "--colors";
-      "--colour"; "--colours" ], Getopt.Unit set_colours, s_"Use ANSI colour sequences even if not tty";
+    [ S 'V'; L"version" ], Getopt.Unit print_version_and_exit, s_"Display version and exit";
+    [ S 'v'; L"verbose" ], Getopt.Unit set_verbose,  s_"Enable libguestfs debugging messages";
+    [ S 'x' ],             Getopt.Unit set_trace,    s_"Enable tracing of libguestfs calls";
+    [ L"debug-gc" ],       Getopt.Unit set_debug_gc, Getopt.hidden_option_description;
+    [ S 'q'; L"quiet" ],   Getopt.Unit set_quiet,    s_"Don't print progress messages";
+    [ L"color"; L"colors";
+      L"colour"; L"colours" ], Getopt.Unit set_colours, s_"Use ANSI colour sequences even if not tty";
   ] @ argspec in
   Getopt.create argspec ?anon_fun usage_msg
 
@@ -662,18 +677,26 @@ let external_command ?(echo_cmd = true) cmd =
 let run_command ?(echo_cmd = true) args =
   if echo_cmd then
     debug "%s" (stringify_args args);
-  let pid =
-    Unix.create_process (List.hd args) (Array.of_list args) Unix.stdin
-      Unix.stdout Unix.stderr in
-  let _, stat = Unix.waitpid [] pid in
-  match stat with
-  | Unix.WEXITED i -> i
-  | Unix.WSIGNALED i ->
-    error (f_"external command '%s' killed by signal %d")
-      (stringify_args args) i
-  | Unix.WSTOPPED i ->
-    error (f_"external command '%s' stopped by signal %d")
-      (stringify_args args) i
+  let app = List.hd args in
+  try
+    let app =
+      if Filename.is_relative app then which app
+      else (Unix.access app [Unix.X_OK]; app) in
+    let pid =
+      Unix.create_process app (Array.of_list args) Unix.stdin
+        Unix.stdout Unix.stderr in
+    let _, stat = Unix.waitpid [] pid in
+    match stat with
+    | Unix.WEXITED i -> i
+    | Unix.WSIGNALED i ->
+      error (f_"external command '%s' killed by signal %d")
+        (stringify_args args) i
+    | Unix.WSTOPPED i ->
+      error (f_"external command '%s' stopped by signal %d")
+        (stringify_args args) i
+  with
+  | Executable_not_found tool -> 127
+  | Unix.Unix_error (errcode, _, _) when errcode = Unix.ENOENT -> 127
 
 let shell_command ?(echo_cmd = true) cmd =
   if echo_cmd then

@@ -18,13 +18,14 @@ run the generator (C<./autogen.sh && make -C generator>) in order to
 create those files.
 
 Libguestfs uses an autotools-based build system, with the main files
-being F<configure.ac> and F<Makefile.am>.  The F<generator>
-subdirectory contains the generator, plus files describing the API.
-The F<src> subdirectory contains source for the library.  The
-F<appliance> and F<daemon> subdirectories contain the source for the
-code that builds the appliance, and the code that runs in the
-appliance respectively.  Other directories are covered in the section
-L<SOURCE CODE SUBDIRECTORIES> below.
+being F<configure.ac> and F<Makefile.am>.  See L</THE BUILD SYSTEM>.
+
+The F<generator> subdirectory contains the generator, plus files
+describing the API.  The F<src> subdirectory contains source for the
+library.  The F<appliance> and F<daemon> subdirectories contain the
+source for the code that builds the appliance, and the code that runs
+in the appliance respectively.  Other directories are covered in the
+section L<SOURCE CODE SUBDIRECTORIES> below.
 
 Apart from the fact that all API entry points go via some generated
 code, the library is straightforward.  (In fact, even the generated
@@ -150,7 +151,7 @@ Logo used on the website.  The fish is called Arthur by the way.
 
 =item F<m4>
 
-M4 macros used by autoconf.
+M4 macros used by autoconf.  See L</THE BUILD SYSTEM>.
 
 =item F<make-fs>
 
@@ -259,6 +260,27 @@ The L<http://libguestfs.org> website files.
 Language bindings.
 
 =back
+
+=head1 THE BUILD SYSTEM
+
+Libguestfs uses the GNU autotools build system (autoconf, automake,
+libtool).
+
+The F<./configure> script is generated from F<configure.ac> and
+F<m4/guestfs_*.m4>.  Most of the configure script is split over many
+m4 macro files by topic, for example F<m4/guestfs_daemon.m4> deals
+with the dependencies of the daemon.
+
+The job of the top level F<Makefile.am> is mainly to list the
+subdirectories (C<SUBDIRS>) in the order they should be compiled.
+
+F<common-rules.mk> is included in every F<Makefile.am> (top level and
+subdirectories).  F<subdir-rules.mk> is included only in subdirectory
+F<Makefile.am> files.
+
+There are many make targets.  Use this command to list them all:
+
+ make help
 
 =head1 ADDING A NEW API
 
@@ -722,15 +744,19 @@ Automake has no native support for OCaml programs, ocamlc nor
 ocamlopt.  What we do instead is to treat OCaml programs as C programs
 which happen to contain these "other objects" (C<"DEPENDENCIES"> in
 automake-speak) that happen to be the OCaml objects.  This works
-because all the OCaml programs contain at least 1 C object used for
-native bindings etc.
+because OCaml programs usually have C files for native bindings etc.
 
 So a typical program is described as just its C sources:
 
- virt_v2v_SOURCES = ... list of C files ...
+ virt_v2v_SOURCES = ... utils-c.c xml-c.c
+
+For programs that have no explicit C sources, we create an empty
+F<dummy.c> file, and list that instead:
+
+ virt_resize_SOURCES = dummy.c
 
 The OCaml objects which contain most of the code are listed as
-automake dependencies:
+automake dependencies (other dependencies may also be listed):
 
  virt_v2v_DEPENDENCIES = ... cmdline.cmx v2v.cmx
 
@@ -739,7 +765,8 @@ command.  This is needed because automake won't assemble the ocamlopt
 command, the list of objects and the C<-cclib> libraries in the
 correct order otherwise.
 
- virt_v2v_LINK = $(top_srcdir)/ocaml-link.sh -cclib ... -- ...
+ virt_v2v_LINK = \
+     $(top_srcdir)/ocaml-link.sh -cclib '-lutils -lgnu' -- ...
 
 The actual rules, which you can examine in F<v2v/Makefile.am>, are a
 little bit more complicated than this because they have to handle:
@@ -754,11 +781,15 @@ Compiling for byte code or native code.
 
 The pattern rules needed to compile the OCaml sources to objects.
 
+These are now kept in F<subdir-rules.mk> at the top level, which is
+included in every subdirectory F<Makefile.am>.
+
 =item *
 
-Adding OCaml sources files to C<EXTRA_DIST>.  Automake isn't aware of
-the complete list of sources for a binary, so it will not add them all
-automatically.
+Adding OCaml sources files to C<EXTRA_DIST>.
+
+Automake isn't aware of the complete list of sources for a binary, so
+it will not add them all automatically.
 
 =back
 

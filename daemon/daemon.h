@@ -189,6 +189,7 @@ extern int lv_canonical (const char *device, char **ret);
 
 /*-- in lvm-filter.c --*/
 extern void copy_lvm (void);
+extern void start_lvmetad (void);
 
 /*-- in zero.c --*/
 extern void wipe_device_before_mkfs (const char *device);
@@ -377,7 +378,7 @@ is_zero (const char *buffer, size_t size)
 #define CHROOT_IN				\
   do {						\
     if (sysroot_len > 0) {                      \
-      int __old_errno = errno;			\
+      const int __old_errno = errno;            \
       if (chroot (sysroot) == -1)               \
         perror ("CHROOT_IN: sysroot");		\
       errno = __old_errno;			\
@@ -386,7 +387,7 @@ is_zero (const char *buffer, size_t size)
 #define CHROOT_OUT				\
   do {						\
     if (sysroot_len > 0) {                      \
-      int __old_errno = errno;			\
+      const int __old_errno = errno;            \
       if (chroot (".") == -1)			\
         perror ("CHROOT_OUT: .");               \
       errno = __old_errno;			\
@@ -414,7 +415,7 @@ is_zero (const char *buffer, size_t size)
 /* Calls reply_with_error, but includes the Augeas error details. */
 #define AUGEAS_ERROR(fs,...)                                            \
   do {                                                                  \
-    int code = aug_error (aug);                                         \
+    const int code = aug_error (aug);                                   \
     if (code == AUG_ENOMEM)                                             \
       reply_with_error (fs ": augeas out of memory", ##__VA_ARGS__);    \
     else {                                                              \

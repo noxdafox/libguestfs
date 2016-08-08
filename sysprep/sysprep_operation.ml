@@ -21,6 +21,7 @@ open Common_utils
 open Printf
 
 open Common_gettext.Gettext
+open Getopt.OptionName
 
 class filesystem_side_effects =
 object
@@ -215,20 +216,23 @@ let dump_pod_options () =
          extra_pod_description = pod }) ->
       List.map (
         fun arg_name ->
-          let heading = sprintf "B<%s>" arg_name in
+          let heading =
+            sprintf "B<%s>" (Getopt.string_of_option_name arg_name) in
           arg_name, (op_name, heading, pod)
       ) arg_names
 
     | (op_name,
        { extra_argspec = (arg_names,
                           (Getopt.String _ | Getopt.Set_string _ | Getopt.Int _ |
-                           Getopt.Set_int _),
+                           Getopt.Set_int _ | Getopt.Symbol _),
                           _);
          extra_pod_argval = Some arg_val;
          extra_pod_description = pod }) ->
       List.map (
         fun arg_name ->
-          let heading = sprintf "B<%s> %s" arg_name arg_val in
+          let heading =
+            sprintf "B<%s> %s"
+                    (Getopt.string_of_option_name arg_name) arg_val in
           arg_name, (op_name, heading, pod)
       ) arg_names
 

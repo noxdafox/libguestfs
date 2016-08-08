@@ -27,6 +27,7 @@ EXTRA_DIST = \
 	test-simplestreams/streams/v1/index.json \
 	test-simplestreams/streams/v1/net.cirros-cloud_released_download.json \
 	test-virt-builder.sh \
+	test-virt-builder-docs.sh \
 	test-virt-builder-list.sh \
 	test-virt-builder-list-simplestreams.sh \
 	test-virt-builder-planner.sh \
@@ -159,15 +160,17 @@ OCAMLFLAGS = $(OCAML_FLAGS) $(OCAML_WARN_ERROR)
 
 if !HAVE_OCAMLOPT
 OBJECTS = $(BOBJECTS)
-BEST    = c
-OCAMLLINKFLAGS = mlguestfs.cma mllib.cma customize.cma -custom
 else
 OBJECTS = $(XOBJECTS)
-BEST    = opt
-OCAMLLINKFLAGS = mlguestfs.cmxa mllib.cmxa customize.cmxa
 endif
 
-virt_builder_DEPENDENCIES = $(OBJECTS) $(top_srcdir)/ocaml-link.sh
+OCAMLLINKFLAGS = mlguestfs.$(MLARCHIVE) mllib.$(MLARCHIVE) customize.$(MLARCHIVE) $(LINK_CUSTOM_OCAMLC_ONLY)
+
+virt_builder_DEPENDENCIES = \
+	$(OBJECTS) \
+	../mllib/mllib.$(MLARCHIVE) \
+	../customize/customize.$(MLARCHIVE) \
+	$(top_srcdir)/ocaml-link.sh
 virt_builder_LINK = \
 	$(top_srcdir)/ocaml-link.sh -cclib '$(OCAMLCLIBS)' -- \
 	  $(OCAMLFIND) $(BEST) $(OCAMLFLAGS) $(OCAMLPACKAGES) $(OCAMLLINKFLAGS) \
@@ -236,13 +239,18 @@ yajl_tests_THEOBJECTS = $(yajl_tests_BOBJECTS)
 yajl_tests.cmo: OCAMLPACKAGES += $(OCAMLPACKAGES_TESTS)
 endif
 
-yajl_tests_DEPENDENCIES = $(yajl_tests_THEOBJECTS) $(top_srcdir)/ocaml-link.sh
+yajl_tests_DEPENDENCIES = \
+	$(yajl_tests_THEOBJECTS) \
+	../mllib/mllib.$(MLARCHIVE) \
+	../customize/customize.$(MLARCHIVE) \
+	$(top_srcdir)/ocaml-link.sh
 yajl_tests_LINK = \
 	$(top_srcdir)/ocaml-link.sh -cclib '$(OCAMLCLIBS)' -- \
 	  $(OCAMLFIND) $(BEST) $(OCAMLFLAGS) $(OCAMLPACKAGES) $(OCAMLPACKAGES_TESTS) $(OCAMLLINKFLAGS) \
 	  $(yajl_tests_THEOBJECTS) -o $@
 
 TESTS = \
+	test-virt-builder-docs.sh \
 	test-virt-builder-list.sh \
 	test-virt-index-validate.sh \
 	$(SLOW_TESTS)

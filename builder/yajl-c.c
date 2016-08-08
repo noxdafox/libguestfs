@@ -28,6 +28,13 @@
 #include <stdio.h>
 #include <string.h>
 
+/* GCC can't work out that the YAJL_IS_<foo> test is sufficient to
+ * ensure that YAJL_GET_<foo> later doesn't return NULL.
+ */
+#if defined(__GNUC__) && __GNUC__ >= 6 /* gcc >= 6 */
+#pragma GCC diagnostic ignored "-Wnull-dereference"
+#endif
+
 #define Val_none (Val_int (0))
 
 value virt_builder_yajl_tree_parse (value stringv);
@@ -42,7 +49,7 @@ convert_yajl_value (yajl_val val, int level)
     caml_invalid_argument ("too many levels of object/array nesting");
 
   if (YAJL_IS_OBJECT (val)) {
-    size_t len = YAJL_GET_OBJECT(val)->len;
+    const size_t len = YAJL_GET_OBJECT(val)->len;
     size_t i;
     rv = caml_alloc (1, 3);
     lv = caml_alloc_tuple (len);
@@ -56,7 +63,7 @@ convert_yajl_value (yajl_val val, int level)
     }
     Store_field (rv, 0, lv);
   } else if (YAJL_IS_ARRAY (val)) {
-    size_t len = YAJL_GET_ARRAY(val)->len;
+    const size_t len = YAJL_GET_ARRAY(val)->len;
     size_t i;
     rv = caml_alloc (1, 4);
     lv = caml_alloc_tuple (len);

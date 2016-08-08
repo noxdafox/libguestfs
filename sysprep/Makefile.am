@@ -21,6 +21,7 @@ EXTRA_DIST = \
 	$(SOURCES_MLI) $(SOURCES_ML) $(SOURCES_C) \
 	script1.sh script2.sh script3.sh script4.sh \
 	test-virt-sysprep.sh \
+	test-virt-sysprep-docs.sh \
 	test-virt-sysprep-passwords.sh \
 	test-virt-sysprep-script.sh \
 	virt-sysprep.pod
@@ -127,15 +128,17 @@ OCAMLFLAGS = $(OCAML_FLAGS) $(OCAML_WARN_ERROR)
 
 if !HAVE_OCAMLOPT
 OBJECTS = $(BOBJECTS)
-BEST    = c
-OCAMLLINKFLAGS = mlguestfs.cma mllib.cma customize.cma -custom
 else
 OBJECTS = $(XOBJECTS)
-BEST    = opt
-OCAMLLINKFLAGS = mlguestfs.cmxa mllib.cmxa customize.cmxa
 endif
 
-virt_sysprep_DEPENDENCIES = $(OBJECTS) $(top_srcdir)/ocaml-link.sh
+OCAMLLINKFLAGS = mlguestfs.$(MLARCHIVE) mllib.$(MLARCHIVE) customize.$(MLARCHIVE) $(LINK_CUSTOM_OCAMLC_ONLY)
+
+virt_sysprep_DEPENDENCIES = \
+	$(OBJECTS) \
+	../mllib/mllib.$(MLARCHIVE) \
+	../customize/customize.$(MLARCHIVE) \
+	$(top_srcdir)/ocaml-link.sh
 virt_sysprep_LINK = \
 	$(top_srcdir)/ocaml-link.sh -cclib '$(OCAMLCLIBS)' -- \
 	  $(OCAMLFIND) $(BEST) $(OCAMLFLAGS) $(OCAMLPACKAGES) $(OCAMLLINKFLAGS) \
@@ -176,8 +179,11 @@ TESTS_ENVIRONMENT = \
 	PATH=$(abs_top_builddir)/fuse:$(PATH) \
 	$(top_builddir)/run --test
 
-if ENABLE_APPLIANCE
 TESTS = \
+	test-virt-sysprep-docs.sh
+
+if ENABLE_APPLIANCE
+TESTS += \
 	test-virt-sysprep.sh \
 	test-virt-sysprep-passwords.sh
 
