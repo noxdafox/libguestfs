@@ -393,15 +393,14 @@ and do_fstrim g inspect =
   List.iter (
     fun dev ->
       g#umount_all ();
-      let mounted = try g#mount dev "/"; true with G.Error _ -> false in
+      let mounted =
+        try g#mount_options "discard" dev "/"; true
+        with G.Error _ -> false in
+
       if mounted then (
         try g#fstrim "/"
         with G.Error msg ->
-          (* Only emit this warning when debugging, because otherwise
-           * it causes distress (RHBZ#1168144).
-           *)
-          if verbose () then
-            warning (f_"%s (ignored)") msg
+          warning (f_"fstrim on guest filesystem %s failed.  Usually you can ignore this message.  To find out more read \"Trimming\" in virt-v2v(1).\n\nOriginal message: %s") dev msg
       )
   ) fses
 

@@ -85,9 +85,7 @@ let rec convert ~keep_serial_console (g : G.guestfs) inspect source rcaps =
   Linux.augeas_init g;
 
   (* Clean RPM database.  This must be done early to avoid RHBZ#1143866. *)
-  let dbfiles = g#glob_expand "/var/lib/rpm/__db.00?" in
-  let dbfiles = Array.to_list dbfiles in
-  List.iter g#rm_f dbfiles;
+  Array.iter g#rm_f (g#glob_expand "/var/lib/rpm/__db.00?");
 
   (* What grub is installed? *)
   let grub_config, grub =
@@ -1329,8 +1327,10 @@ let rec convert ~keep_serial_console (g : G.guestfs) inspect source rcaps =
       let replace device =
         try List.assoc device map
         with Not_found ->
-          if String.find device "md" = -1 && String.find device "fd" = -1 &&
-            device <> "cdrom" then
+          if not (String.is_prefix device "md") &&
+             not (String.is_prefix device "fd") &&
+             not (String.is_prefix device "sr") &&
+             device <> "cdrom" then
             warning (f_"%s references unknown device \"%s\".  You may have to fix this entry manually after conversion.")
               path device;
           device
