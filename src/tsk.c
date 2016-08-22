@@ -36,6 +36,10 @@
 
 static struct guestfs_tsk_dirent_list *parse_filesystem_walk (guestfs_h *, FILE *);
 static int deserialise_dirent_list (guestfs_h *, FILE *, struct guestfs_tsk_dirent_list *);
+static struct guestfs_tsk_blockinfo_list *parse_block_map (guestfs_h *, FILE *);
+static int deserialise_blockinfo_list (guestfs_h *, FILE *, struct guestfs_tsk_blockinfo_list *);
+
+
 
 struct guestfs_tsk_dirent_list *
 guestfs_impl_filesystem_walk (guestfs_h *g, const char *mountable)
@@ -61,6 +65,32 @@ guestfs_impl_filesystem_walk (guestfs_h *g, const char *mountable)
   }
 
   return parse_filesystem_walk (g, fp);  /* caller frees */
+}
+
+struct guestfs_tsk_blockinfo_list *
+guestfs_impl_block_map (guestfs_h *g, const char *mountable)
+{
+  int ret = 0;
+  CLEANUP_FCLOSE FILE *fp = NULL;
+  CLEANUP_UNLINK_FREE char *tmpfile = NULL;
+
+  ret = guestfs_int_lazy_make_tmpdir (g);
+  if (ret < 0)
+    return NULL;
+
+  tmpfile = safe_asprintf (g, "%s/block_map%d", g->tmpdir, ++g->unique);
+
+  ret = guestfs_internal_block_map (g, mountable, tmpfile);
+  if (ret < 0)
+    return NULL;
+
+  fp = fopen (tmpfile, "r");
+  if (fp == NULL) {
+    perrorf (g, "fopen: %s", tmpfile);
+    return NULL;
+  }
+
+  return parse_block_map (g, fp);  /* caller frees */
 }
 
 /* Parse the file content and return dirents list.
@@ -123,6 +153,64 @@ deserialise_dirent_list (guestfs_h *g, FILE *fp,
 
   xdr_destroy (&xdr);
   dirents->len = index;
+
+  return ret ? 0 : -1;
+}
+
+static struct guestfs_tsk_blockinfo_list *
+parse_block_map (guestfs_h *g, FILE *fp)
+{
+  int ret = 0;
+  struct guestfs_tsk_blockinfo_list *blocks = NULL;
+
+  /* Initialise results array. */
+  blocks = safe_malloc (g, sizeof (*blocks));
+  blocks->len = 8;
+  blocks->val = safe_malloc (g, blocks->len * sizeof (*blocks->val));
+
+  /* Deserialise buffer into dirent list. */
+  ret = deserialise_blockinfo_list (g, fp, blocks);
+  if (ret < 0) {
+    guestfs_free_tsk_blockinfo_list (blocks);
+    return NULL;
+  }
+
+  return blocks;
+}
+
+static int
+deserialise_blockinfo_list (guestfs_h *g, FILE *fp,
+                            struct guestfs_tsk_blockinfo_list *blocks)
+{
+  XDR xdr;
+  int ret = 0;
+  uint32_t index = 0;
+  struct stat statbuf;
+
+  ret = fstat (fileno(fp), &statbuf);
+  if (ret == -1)
+    return -1;
+
+  xdrstdio_create (&xdr, fp, XDR_DECODE);
+
+  for (index = 0; xdr_getpos (&xdr) < statbuf.st_size; index++) {
+    if (index == blocks->len) {
+      blocks->len = 2 * blocks->len;
+      blocks->val = safe_realloc (g, blocks->val,
+                                   blocks->len *
+                                   sizeof (*blocks->val));
+    }
+
+    /* Clear the entry so xdr logic will allocate necessary memory. */
+    memset (&blocks->val[index], 0, sizeof (*blocks->val));
+    ret = xdr_guestfs_int_tsk_blockinfo (&xdr, (guestfs_int_tsk_blockinfo *)
+                                         &blocks->val[index]);
+    if (ret == 0)
+      break;
+  }
+
+  xdr_destroy (&xdr);
+  blocks->len = index;
 
   return ret ? 0 : -1;
 }

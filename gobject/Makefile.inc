@@ -44,6 +44,7 @@ guestfs_gobject_headers= \
   include/guestfs-gobject/struct-stat.h \
   include/guestfs-gobject/struct-statns.h \
   include/guestfs-gobject/struct-statvfs.h \
+  include/guestfs-gobject/struct-tsk_blockinfo.h \
   include/guestfs-gobject/struct-tsk_dirent.h \
   include/guestfs-gobject/struct-utsname.h \
   include/guestfs-gobject/struct-version.h \
@@ -134,6 +135,7 @@ guestfs_gobject_sources= \
   src/struct-stat.c \
   src/struct-statns.c \
   src/struct-statvfs.c \
+  src/struct-tsk_blockinfo.c \
   src/struct-tsk_dirent.c \
   src/struct-utsname.c \
   src/struct-version.c \

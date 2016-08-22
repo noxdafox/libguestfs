@@ -468,6 +468,17 @@ let structs = [
     ];
     s_camel_name = "TSKDirent" };
 
+  (* The Sleuth Kit block entry information. *)
+  { defaults with
+    s_name = "tsk_blockinfo";
+    s_cols = [
+    "tsk_inode", FUInt64;
+    "tsk_name", FString;
+    "tsk_flags", FUInt32;
+    "tsk_blocks", RStructList;
+    ];
+    s_camel_name = "TSKBlockInfo" };
+
 ] (* end of structs *)
 
 let lookup_struct name =

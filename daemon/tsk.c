@@ -44,10 +44,13 @@ enum tsk_dirent_flags {
 
 static int open_filesystem (const char *, TSK_IMG_INFO **, TSK_FS_INFO **);
 static TSK_WALK_RET_ENUM fswalk_callback (TSK_FS_FILE *, const char *, void *);
+static TSK_WALK_RET_ENUM metawalk_callback (TSK_FS_FILE *, const char *, void *);
+static TSK_WALK_RET_ENUM attrwalk_callback (TSK_FS_FILE *, TSK_OFF_T, TSK_DADDR_T, char *, size_t, TSK_FS_BLOCK_FLAG_ENUM, void *);
 static char file_type (TSK_FS_FILE *);
 static int file_flags (TSK_FS_FILE *fsfile);
 static void file_metadata (TSK_FS_META *, guestfs_int_tsk_dirent *);
 static int send_dirent_info (guestfs_int_tsk_dirent *);
+static int send_block_info (guestfs_int_tsk_blockinfo *);
 static void reply_with_tsk_error (const char *);
 
 int
@@ -67,6 +70,34 @@ do_internal_filesystem_walk (const mountable_t *mountable)
   reply (NULL, NULL);  /* Reply message. */
 
   ret = tsk_fs_dir_walk (fs, fs->root_inum, flags, fswalk_callback, NULL);
+  if (ret == 0)
+    ret = send_file_end (0);  /* File transfer end. */
+  else
+    send_file_end (1);  /* Cancel file transfer. */
+
+  fs->close (fs);
+  img->close (img);
+
+  return ret;
+}
+
+int
+do_internal_block_map (const mountable_t *mountable)
+{
+  int ret = -1;
+  TSK_FS_INFO *fs = NULL;
+  TSK_IMG_INFO *img = NULL;  /* Used internally by tsk_fs_dir_walk */
+  const int flags =
+    TSK_FS_DIR_WALK_FLAG_ALLOC | TSK_FS_DIR_WALK_FLAG_UNALLOC |
+    TSK_FS_DIR_WALK_FLAG_RECURSE | TSK_FS_DIR_WALK_FLAG_NOORPHAN;
+
+  ret = open_filesystem (mountable->device, &img, &fs);
+  if (ret < 0)
+    return ret;
+
+  reply (NULL, NULL);  /* Reply message. */
+
+  ret = tsk_fs_dir_walk (fs, fs->root_inum, flags, metawalk_callback, NULL);
   if (ret == 0)
     ret = send_file_end (0);  /* File transfer end. */
   else
@@ -139,6 +170,63 @@ fswalk_callback (TSK_FS_FILE *fsfile, const char *path, void *data)
   ret = (ret == 0) ? TSK_WALK_CONT : TSK_WALK_ERROR;
 
   return ret;
+}
+
+static TSK_WALK_RET_ENUM
+metawalk_callback (TSK_FS_FILE *fsfile, const char *path, void *data)
+{
+  int index = 0, count = 0;
+  CLEANUP_FREE char *fname = NULL;
+  const TSK_FS_ATTR *fsattr = NULL;
+  struct guestfs_int_tsk_blockinfo blockinfo;
+  const int flags = TSK_FS_FILE_WALK_FLAG_AONLY | TSK_FS_FILE_WALK_FLAG_SLACK;
+
+  /* Ignore ./ and ../ */
+  index = TSK_FS_ISDOT (fsfile->name->name);
+  if (index != 0)
+    return TSK_WALK_CONT;
+
+  /* Build the full relative path of the entry */
+  ret = asprintf (&fname, "%s%s", path, fsfile->name->name);
+  if (ret < 0) {
+    perror ("asprintf");
+    return TSK_WALK_ERROR;
+  }
+
+  /* Set block fields */
+  memset (&blockinfo, 0, sizeof blockinfo);
+
+  blockinfo.tsk_inode = fsfile->name->meta_addr;
+  blockinfo.tsk_name = fname;
+  blockinfo.tsk_flags = file_flags (fsfile);
+
+  /* Retrieve block list */
+  count = tsk_fs_file_attr_getsize (fsfile);
+
+  for (index = 0; index < count; index++) {
+    fsattr = tsk_fs_file_attr_get_idx (fsfile, index);
+
+    if (fsattr != NULL && fsattr->flags & TSK_FS_ATTR_NONRES)
+      tsk_fs_attr_walk (fsattr, flags, attrwalk_callback, (void*)path);
+  }
+
+  blockinfo.tsk_flags = NULL;
+
+  ret = send_block_info (&blockinfo);
+
+  return (ret == 0) ? TSK_WALK_CONT : TSK_WALK_ERROR;
+}
+
+static TSK_WALK_RET_ENUM
+attrwalk_callback (TSK_FS_FILE *fsfile, TSK_OFF_T offset,
+                   TSK_DADDR_T blkaddr, char *buf, size_t size,
+                   TSK_FS_BLOCK_FLAG_ENUM flags, void *data)
+{
+  int ret = 0;
+
+  /* Ignore sparse blocks because they do not reside on disk */
+  if (flags & TSK_FS_BLOCK_FLAG_SPARSE)
+    return TSK_WALK_CONT;
 }
 
 /* Inspect fsfile to identify its type. */
@@ -245,6 +333,39 @@ send_dirent_info (guestfs_int_tsk_dirent *dirent)
   ret = xdr_guestfs_int_tsk_dirent (&xdr, dirent);
   if (ret == 0) {
     perror ("xdr_guestfs_int_tsk_dirent");
+    return -1;
+  }
+  len = xdr_getpos (&xdr);
+
+  xdr_destroy (&xdr);
+
+  /* Send serialised tsk_dirent out. */
+  return send_file_write (buf, len);
+}
+
+/* Serialise block into XDR stream and send it to the appliance.
+ * Return 0 on success, -1 on error.
+ */
+static int
+send_block_info (guestfs_int_tsk_blockinfo *blockinfo)
+{
+  XDR xdr;
+  int ret = 0;
+  size_t len = 0;
+  CLEANUP_FREE char *buf = NULL;
+
+  buf = malloc (GUESTFS_MAX_CHUNK_SIZE);
+  if (buf == NULL) {
+    perror ("malloc");
+    return -1;
+  }
+
+  /* Serialise tsk_dirent struct. */
+  xdrmem_create (&xdr, buf, GUESTFS_MAX_CHUNK_SIZE, XDR_ENCODE);
+
+  ret = xdr_guestfs_int_tsk_blockinfo (&xdr, blockinfo);
+  if (ret == 0) {
+    perror ("xdr_guestfs_int_tsk_blockinfo");
     return -1;
   }
   len = xdr_getpos (&xdr);

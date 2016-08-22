@@ -3702,6 +3702,15 @@ Unknown file type
 
 =back" };
 
+  { defaults with
+    name = "block_map"; added = (1, 35, 2);
+    style = RStructList ("blocks", "tsk_blockinfo"), [Mountable "device";], [];
+    optional = Some "libtsk";
+    progress = true; cancellable = true;
+    shortdesc = "walk through the filesystem content";
+    longdesc = "\
+FOOBAR" };
+
 ]
 
 (* daemon_functions are any functions which cause some action
@@ -13204,6 +13213,15 @@ If the optional C<unallocated> flag is true (default is false),
 only the unallocated blocks will be extracted.
 This is useful to detect hidden data or to retrieve deleted files
 which data units have not been overwritten yet." };
+
+  { defaults with
+    name = "internal_block_map"; added = (1, 35, 2);
+    style = RErr, [Mountable "device"; FileOut "filename"], [];
+    proc_nr = Some 469;
+    visibility = VInternal;
+    optional = Some "libtsk";
+    shortdesc = "walk through the filesystem content";
+    longdesc = "Internal function for block_map." };
 
 ]
 
