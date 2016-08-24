@@ -13205,6 +13205,15 @@ only the unallocated blocks will be extracted.
 This is useful to detect hidden data or to retrieve deleted files
 which data units have not been overwritten yet." };
 
+  { defaults with
+    name = "internal_find_inode"; added = (1, 35, 2);
+    style = RErr, [Mountable "device"; Int64 "inode"; FileOut "filename";], [];
+    proc_nr = Some 469;
+    visibility = VInternal;
+    optional = Some "libtsk";
+    shortdesc = "search the entries associated to the given inode";
+    longdesc = "Internal function for find_inode." };
+
 ]
 
 (* Non-API meta-commands available only in guestfish.
