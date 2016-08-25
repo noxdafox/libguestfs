@@ -329,7 +329,7 @@ entry_is_dot (TSK_FS_FILE *fsfile)
 {
   return (TSK_FS_ISDOT (fsfile->name->name) &&
           !(fsfile->fs_info->root_inum == fsfile->name->meta_addr &&  /* Root */
-            STREQ (fsfile->name->name, ".")))  /* Avoid 'bin/..' 'etc/..' */
+            STREQ (fsfile->name->name, ".")));  /* Avoid 'bin/..' 'etc/..' */
 }
 
 int
