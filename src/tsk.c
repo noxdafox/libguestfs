@@ -72,6 +72,32 @@ guestfs_impl_find_inode (guestfs_h *g, const char *mountable, int64_t inode)
   return parse_dirent_file (g, tmpfile);  /* caller frees */
 }
 
+struct guestfs_tsk_dirent_list *
+guestfs_impl_find_inode (guestfs_h *g, const char *mountable, int64_t inode)
+{
+  int ret = 0;
+  CLEANUP_FCLOSE FILE *fp = NULL;
+  CLEANUP_UNLINK_FREE char *tmpfile = NULL;
+
+  ret = guestfs_int_lazy_make_tmpdir (g);
+  if (ret < 0)
+    return NULL;
+
+  tmpfile = safe_asprintf (g, "%s/find_inode%d", g->tmpdir, ++g->unique);
+
+  ret = guestfs_internal_find_inode (g, mountable, inode, tmpfile);
+  if (ret < 0)
+    return NULL;
+
+  fp = fopen (tmpfile, "r");
+  if (fp == NULL) {
+    perrorf (g, "fopen: %s", tmpfile);
+    return NULL;
+  }
+
+  return parse_dirent_file (g, fp);  /* caller frees */
+}
+
 /* Parse the file content and return dirents list.
  * Return a list of tsk_dirent on success, NULL on error.
  */
