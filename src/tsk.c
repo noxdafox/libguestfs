@@ -34,7 +34,7 @@
 #include "guestfs-internal-all.h"
 #include "guestfs-internal-actions.h"
 
-static struct guestfs_tsk_dirent_list *parse_filesystem_walk (guestfs_h *, FILE *);
+static struct guestfs_tsk_dirent_list *parse_dirent_file (guestfs_h *, FILE *);
 static int deserialise_dirent_list (guestfs_h *, FILE *, struct guestfs_tsk_dirent_list *);
 
 struct guestfs_tsk_dirent_list *
@@ -60,14 +60,14 @@ guestfs_impl_filesystem_walk (guestfs_h *g, const char *mountable)
     return NULL;
   }
 
-  return parse_filesystem_walk (g, fp);  /* caller frees */
+  return parse_dirent_file (g, fp);  /* caller frees */
 }
 
 /* Parse the file content and return dirents list.
  * Return a list of tsk_dirent on success, NULL on error.
  */
 static struct guestfs_tsk_dirent_list *
-parse_filesystem_walk (guestfs_h *g, FILE *fp)
+parse_dirent_file (guestfs_h *g, FILE *fp)
 {
   int ret = 0;
   struct guestfs_tsk_dirent_list *dirents = NULL;
