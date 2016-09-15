@@ -320,7 +320,7 @@ po/POTFILES: configure.ac
 	rm -f $@ $@-t
 	cd $(srcdir); \
 	find $(DIST_SUBDIRS) -name '*.c' -o -name '*.pl' -o -name '*.pm' | \
-	grep -v -E '^(examples|gnulib|gobject/docs|perl/(blib|examples)|po-docs|tests|test-data)/' | \
+	grep -v -E '^(examples|gnulib|gobject/docs|perl/(blib|examples)|perl/lib/Sys/Guestfs\.c|po-docs|tests|test-data)/' | \
 	grep -v -E '/((guestfs|rc)_protocol\.c)$$' | \
 	grep -v -E '^python/utils\.c$$' | \
 	LC_ALL=C sort > $@-t
@@ -527,7 +527,8 @@ maintainer-commit:
 maintainer-tag:
 	git tag -a "v$(VERSION)" -m "Version $(VERSION) ($(BRANCH_TYPE))" -f
 
-# Maintainer only: check EXTRA_DIST rule is complete.
+# Maintainer only: check no files are missing from EXTRA_DIST rules,
+# and that all generated files have been included in the tarball.
 # (Note you must have done 'make dist')
 
 maintainer-check-extra-dist:
@@ -539,9 +540,18 @@ maintainer-check-extra-dist:
 	  grep -v '^\.gnulib' | \
 	  sort > tmp/gitfiles
 	comm -13 tmp/tarfiles tmp/gitfiles > tmp/comm-out
+	@echo Checking for differences between EXTRA_DIST and git ...
 	cat tmp/comm-out
 	[ ! -s tmp/comm-out ]
+	@echo Checking for generated files missing from the tarball ...
+	@for f in `cat generator/files-generated.txt`; do \
+	  if ! grep -sq "^$$f\$$" tmp/tarfiles; then \
+	    echo generated file missing from tarball: $$f; \
+	    exit 1; \
+	  fi; \
+	done
 	rm tmp/tarfiles tmp/gitfiles tmp/comm-out
+	@echo PASS: EXTRA_DIST tests
 
 # Provide help on common Makefile targets.
 
