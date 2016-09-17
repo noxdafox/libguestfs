@@ -3729,6 +3729,22 @@ Searches all the entries associated with the given inode.
 For each entry, a C<tsk_dirent> structure is returned.
 See C<filesystem_walk> for more information about C<tsk_dirent> structures." };
 
+  { defaults with
+    name = "find_block"; added = (1, 35, 6);
+    style = RStructList ("dirents", "tsk_dirent"), [Mountable "device"; Int64 "block";], [];
+    optional = Some "libtsk";
+    progress = true; cancellable = true;
+    shortdesc = "search the entries referring to the given data block";
+    longdesc = "\
+Searches all the entries referring to the given data block.
+
+Certain filesystems preserve the block mapping when deleting a file.
+Therefore, it is possible to see multiple deleted files referring
+to the same block.
+
+For each entry, a C<tsk_dirent> structure is returned.
+See C<filesystem_walk> for more information about C<tsk_dirent> structures." };
+
 ]
 
 (* daemon_functions are any functions which cause some action
