@@ -20,6 +20,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdbool.h>
 #include <inttypes.h>
 #include <string.h>
 #include <unistd.h>
@@ -42,9 +43,16 @@ enum tsk_dirent_flags {
   DIRENT_COMPRESSED = 0x04
 };
 
+typedef struct {
+  bool found;
+  uint64_t block;
+} findblk_data;
+
 static int open_filesystem (const char *, TSK_IMG_INFO **, TSK_FS_INFO **);
 static TSK_WALK_RET_ENUM fswalk_callback (TSK_FS_FILE *, const char *, void *);
 static TSK_WALK_RET_ENUM findino_callback (TSK_FS_FILE *, const char *, void *);
+static TSK_WALK_RET_ENUM findblk_callback (TSK_FS_FILE *, const char *, void *);
+static TSK_WALK_RET_ENUM attrwalk_callback (TSK_FS_FILE *, TSK_OFF_T , TSK_DADDR_T , char *, size_t , TSK_FS_BLOCK_FLAG_ENUM , void *);
 static int send_dirent_info (TSK_FS_FILE *, const char *);
 static char file_type (TSK_FS_FILE *);
 static int file_flags (TSK_FS_FILE *fsfile);
@@ -98,6 +106,35 @@ do_internal_find_inode (const mountable_t *mountable, int64_t inode)
 
   ret = tsk_fs_dir_walk (fs, fs->root_inum, flags,
                          findino_callback, (void *) &inode);
+  if (ret == 0)
+    ret = send_file_end (0);  /* File transfer end. */
+  else
+    send_file_end (1);  /* Cancel file transfer. */
+
+  fs->close (fs);
+  img->close (img);
+
+  return ret;
+}
+
+int
+do_internal_find_block (const mountable_t *mountable, int64_t block)
+{
+  int ret = -1;
+  TSK_FS_INFO *fs = NULL;
+  TSK_IMG_INFO *img = NULL;  /* Used internally by tsk_fs_dir_walk */
+  const int flags =
+    TSK_FS_DIR_WALK_FLAG_ALLOC | TSK_FS_DIR_WALK_FLAG_UNALLOC |
+    TSK_FS_DIR_WALK_FLAG_RECURSE | TSK_FS_DIR_WALK_FLAG_NOORPHAN;
+
+  ret = open_filesystem (mountable->device, &img, &fs);
+  if (ret < 0)
+    return ret;
+
+  reply (NULL, NULL);  /* Reply message. */
+
+  ret = tsk_fs_dir_walk (fs, fs->root_inum, flags,
+                         findblk_callback, (void *) &block);
   if (ret == 0)
     ret = send_file_end (0);  /* File transfer end. */
   else
@@ -170,6 +207,65 @@ findino_callback (TSK_FS_FILE *fsfile, const char *path, void *data)
   ret = send_dirent_info (fsfile, path);
 
   return (ret == 0) ? TSK_WALK_CONT : TSK_WALK_ERROR;
+}
+
+/* Find block, it gets called on every FS node.
+ *
+ * Return TSK_WALK_CONT on success, TSK_WALK_ERROR on error.
+ */
+static TSK_WALK_RET_ENUM
+findblk_callback (TSK_FS_FILE *fsfile, const char *path, void *data)
+{
+  findblk_data blkdata;
+  const TSK_FS_ATTR *fsattr = NULL;
+  int ret = 0, count = 0, index = 0;
+  const int flags = TSK_FS_FILE_WALK_FLAG_AONLY | TSK_FS_FILE_WALK_FLAG_SLACK |
+    TSK_FS_FILE_WALK_FLAG_NOSPARSE;
+
+  if (entry_is_dot (fsfile))
+    return TSK_WALK_CONT;
+
+  blkdata.found = false;
+  blkdata.block = * (uint64_t *) data;
+
+  /* Retrieve block list */
+  count = tsk_fs_file_attr_getsize (fsfile);
+
+  for (index = 0; index < count; index++) {
+    fsattr = tsk_fs_file_attr_get_idx (fsfile, index);
+
+    if (fsattr != NULL && fsattr->flags & TSK_FS_ATTR_NONRES) {
+      ret = tsk_fs_attr_walk (fsattr, flags,
+                              attrwalk_callback, (void *) &blkdata);
+      if (ret != 0)
+        return TSK_WALK_ERROR;
+    }
+  }
+
+  if (blkdata.found)
+    ret = send_dirent_info (fsfile, path);
+
+  return (ret == 0) ? TSK_WALK_CONT : TSK_WALK_ERROR;
+}
+
+/* Attribute walk, searches the given block within the FS node attributes.
+ *
+ * Return TSK_WALK_CONT on success, TSK_WALK_ERROR on error.
+ */
+static TSK_WALK_RET_ENUM
+attrwalk_callback (TSK_FS_FILE *fsfile, TSK_OFF_T offset,
+                   TSK_DADDR_T blkaddr, char *buf, size_t size,
+                   TSK_FS_BLOCK_FLAG_ENUM flags, void *data)
+{
+  findblk_data *blkdata = (findblk_data *) data;
+
+  if (blkaddr == blkdata->block) {
+    blkdata->found = true;
+
+    return TSK_WALK_STOP;
+  }
+
+  return TSK_WALK_CONT;
 }
 
 /* Extract the information from the entry, serialize and send it out.

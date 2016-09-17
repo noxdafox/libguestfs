@@ -13253,6 +13253,15 @@ is removed." };
     shortdesc = "search the entries associated to the given inode";
     longdesc = "Internal function for find_inode." };
 
+  { defaults with
+    name = "internal_find_block"; added = (1, 35, 6);
+    style = RErr, [Mountable "device"; Int64 "block"; FileOut "filename";], [];
+    proc_nr = Some 471;
+    visibility = VInternal;
+    optional = Some "libtsk";
+    shortdesc = "search the entries associated to the given block";
+    longdesc = "Internal function for find_block." };
+
 ]
 
 (* Non-API meta-commands available only in guestfish.
