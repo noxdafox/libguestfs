@@ -3718,7 +3718,7 @@ Unknown file type
 =back" };
 
   { defaults with
-    name = "find_inode"; added = (1, 35, 6)
+    name = "find_inode"; added = (1, 35, 6);
     style = RStructList ("dirents", "tsk_dirent"), [Mountable "device"; Int64 "inode";], [];
     optional = Some "libtsk";
     progress = true; cancellable = true;
