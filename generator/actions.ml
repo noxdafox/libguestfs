@@ -3582,9 +3582,8 @@ and directories stored within.
 
 It is not necessary to mount the disk partition to run this command.
 
-All entries in the filesystem are returned, excluding C<.> and
-C<..>. This function can list deleted or unaccessible files.
-The entries are I<not> sorted.
+All entries in the filesystem are returned. This function can list deleted
+or unaccessible files. The entries are I<not> sorted.
 
 The C<tsk_dirent> structure contains the following fields.
 
@@ -3717,6 +3716,18 @@ Whiteout inode (BSD)
 Unknown file type
 
 =back" };
+
+  { defaults with
+    name = "find_inode"; added = (1, 35, 6);
+    style = RStructList ("dirents", "tsk_dirent"), [Mountable "device"; Int64 "inode";], [];
+    optional = Some "libtsk";
+    progress = true; cancellable = true;
+    shortdesc = "search the entries associated to the given inode";
+    longdesc = "\
+Searches all the entries associated with the given inode.
+
+For each entry, a C<tsk_dirent> structure is returned.
+See C<filesystem_walk> for more information about C<tsk_dirent> structures." };
 
 ]
 
@@ -13232,6 +13243,15 @@ handle C<file>.
 
 If C<remove> is true (C<false> by default), then the transformation
 is removed." };
+
+  { defaults with
+    name = "internal_find_inode"; added = (1, 35, 6);
+    style = RErr, [Mountable "device"; Int64 "inode"; FileOut "filename";], [];
+    proc_nr = Some 470;
+    visibility = VInternal;
+    optional = Some "libtsk";
+    shortdesc = "search the entries associated to the given inode";
+    longdesc = "Internal function for find_inode." };
 
 ]
 
