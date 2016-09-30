@@ -21,6 +21,7 @@ TESTS = \
 	test-download-inode.sh \
 	test-download-blocks.sh \
 	test-filesystem-walk.sh \
+	test-extfs-journal.sh \
 	test-find-inode.sh
 
 TESTS_ENVIRONMENT = $(top_builddir)/run --test

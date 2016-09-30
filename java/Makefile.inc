@@ -28,6 +28,7 @@ java_built_sources = \
 	com/redhat/et/libguestfs/BTRFSScrub.java \
 	com/redhat/et/libguestfs/BTRFSSubvolume.java \
 	com/redhat/et/libguestfs/Dirent.java \
+	com/redhat/et/libguestfs/ExtFSJBlock.java \
 	com/redhat/et/libguestfs/HivexNode.java \
 	com/redhat/et/libguestfs/HivexValue.java \
 	com/redhat/et/libguestfs/INotifyEvent.java \

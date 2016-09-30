@@ -31,6 +31,7 @@ guestfs_gobject_headers= \
   include/guestfs-gobject/struct-btrfsscrub.h \
   include/guestfs-gobject/struct-btrfssubvolume.h \
   include/guestfs-gobject/struct-dirent.h \
+  include/guestfs-gobject/struct-extfs_jblock.h \
   include/guestfs-gobject/struct-hivex_node.h \
   include/guestfs-gobject/struct-hivex_value.h \
   include/guestfs-gobject/struct-inotify_event.h \
@@ -71,6 +72,7 @@ guestfs_gobject_headers= \
   include/guestfs-gobject/optargs-disk_create.h \
   include/guestfs-gobject/optargs-download_blocks.h \
   include/guestfs-gobject/optargs-e2fsck.h \
+  include/guestfs-gobject/optargs-extfs_journal.h \
   include/guestfs-gobject/optargs-fstrim.h \
   include/guestfs-gobject/optargs-glob_expand.h \
   include/guestfs-gobject/optargs-grep.h \
@@ -122,6 +124,7 @@ guestfs_gobject_sources= \
   src/struct-btrfsscrub.c \
   src/struct-btrfssubvolume.c \
   src/struct-dirent.c \
+  src/struct-extfs_jblock.c \
   src/struct-hivex_node.c \
   src/struct-hivex_value.c \
   src/struct-inotify_event.c \
@@ -162,6 +165,7 @@ guestfs_gobject_sources= \
   src/optargs-disk_create.c \
   src/optargs-download_blocks.c \
   src/optargs-e2fsck.c \
+  src/optargs-extfs_journal.c \
   src/optargs-fstrim.c \
   src/optargs-glob_expand.c \
   src/optargs-grep.c \

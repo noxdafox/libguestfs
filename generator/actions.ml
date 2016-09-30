@@ -3729,6 +3729,83 @@ Searches all the entries associated with the given inode.
 For each entry, a C<tsk_dirent> structure is returned.
 See C<filesystem_walk> for more information about C<tsk_dirent> structures." };
 
+  { defaults with
+    name = "extfs_journal"; added = (1, 35, 7);
+    style = RStructList ("jblocks", "extfs_jblock"), [Mountable "device";], [OInt64 "inode";];
+    optional = Some "sleuthkit";
+    progress = true; cancellable = true;
+    shortdesc = "list the content of an Ext filesystem journal";
+    longdesc = "\
+Parses the Ext filesystem journal contained in the given partition
+(eg. F</dev/sda1>) and returns its content.
+If the journal is not stored in its default location, the User
+can specify its inode with the optional parameter.
+
+The Ext filesystem journal is a circular log for tracking changes
+not yet committed to disk.
+Its core functionality is reducing the risk of filesystem corruptions
+in case of power failure or system crash.
+
+The C<extfs_journal> API can be used to acquire information
+about recent changes applied on the filesystem.
+
+A C<extfs_jblock> structure is returned for each
+filesystem block recorded in the Ext journal.
+
+The C<extfs_jblock> structure contains the following fields.
+
+=over 4
+
+=item 'journal_block'
+
+Address within the journal of the block to be updated.
+
+=item 'sequence'
+
+Ext block updates are done in transactions, each transaction
+has a sequence number and might affect multiple blocks.
+
+=item 'filesystem_block'
+
+Address within the filesystem of the block to be updated.
+
+=item 'time_sec'
+
+=item 'time_nsec'
+
+Unix timestamp in second and nanoseconds of the transaction.
+
+=item 'flags'
+
+Bitfield containing extra information regarding the entry.
+It contains the logical OR of the following values:
+
+=over 4
+
+=item 0x0001
+
+Each time the filesystem is mounted, the previous journal blocks
+are marked as unallocated and will be gradually overwritten
+by new entries.
+
+If set to C<1>, the journal block is allocated implying this change
+is related to the last usage of the filesystem.
+Otherwise, the journal block is not allocated and the changes
+might be related to previous usages of the filesystem.
+
+=item 0x0002
+
+The bit is set to C<1> when the transaction has been committed
+to the filesystem.
+Otherwise, the transaction did not complete.
+This means the filesystem might have not been cleanly unmounted.
+In these cases, informations such as timestamp and sequence number
+might be missing.
+
+=back
+
+=back" };
+
 ]
 
 (* daemon_functions are any functions which cause some action
@@ -13252,6 +13329,16 @@ is removed." };
     optional = Some "libtsk";
     shortdesc = "search the entries associated to the given inode";
     longdesc = "Internal function for find_inode." };
+
+  { defaults with
+    name = "internal_extfs_journal"; added = (1, 34, 7);
+    style = RErr, [Mountable "device"; FileOut "filename"; Int64 "inode";], [];
+    proc_nr = Some 471;
+    visibility = VInternal;
+    optional = Some "sleuthkit";
+    progress = true; cancellable = true;
+    shortdesc = "parses the Ext filesystem journal";
+    longdesc = "Internal function for extfs_journal." };
 
 ]
 

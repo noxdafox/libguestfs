@@ -31,6 +31,7 @@
 
 static int send_command_output (const char *cmd);
 
+GUESTFSD_EXT_CMD(str_jls, jls);
 GUESTFSD_EXT_CMD(str_icat, icat);
 GUESTFSD_EXT_CMD(str_blkls, blkls);
 
@@ -86,6 +87,26 @@ do_download_blocks (const mountable_t *mountable, int64_t start, int64_t stop,
   /* Construct the command. */
   ret = asprintf (&cmd, "%s %s %s %" PRIi64 "-%" PRIi64,
                   str_blkls, mountable->device, params, start, stop);
+  if (ret < 0) {
+    reply_with_perror ("asprintf");
+    return -1;
+  }
+
+  return send_command_output (cmd);
+}
+
+int
+do_internal_extfs_journal (const mountable_t *mountable, int64_t inode)
+{
+  int ret;
+  const char *params;
+  CLEANUP_FREE char *cmd = NULL;
+
+  /* Construct the command. */
+  if (inode >= 0)
+    ret = asprintf (&cmd, "%s %s %" PRIi64, str_jls, mountable->device, inode);
+  else
+    ret = asprintf (&cmd, "%s %s", str_jls, mountable->device);
   if (ret < 0) {
     reply_with_perror ("asprintf");
     return -1;

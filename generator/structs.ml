@@ -468,6 +468,19 @@ let structs = [
     ];
     s_camel_name = "TSKDirent" };
 
+  (* Ext file system journal block information. *)
+  { defaults with
+    s_name = "extfs_jblock";
+    s_cols = [
+    "journal_block", FUInt64;
+    "sequence", FUInt64;
+    "filesystem_block", FUInt64;
+    "time_sec", FUInt64;
+    "time_nsec", FUInt64;
+    "flags", FUInt32;
+    ];
+    s_camel_name = "ExtFSJBlock" };
+
 ] (* end of structs *)
 
 let lookup_struct name =
