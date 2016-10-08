@@ -41,18 +41,35 @@ type kernel_info = {
   ki_supports_virtio : bool;
   ki_is_xen_kernel : bool;
   ki_is_debug : bool;
+  ki_config_file : string option;
 }
 
 let string_of_kernel_info ki =
-  sprintf "(%s, %s, %s, %s, %s, virtio=%b, xen=%b, debug=%b)"
+  sprintf "(%s, %s, %s, %s, %s, %s, virtio=%b, xen=%b, debug=%b)"
     ki.ki_name ki.ki_version ki.ki_arch ki.ki_vmlinuz
     (match ki.ki_initrd with None -> "None" | Some f -> f)
+    (match ki.ki_config_file with None -> "None" | Some f -> f)
     ki.ki_supports_virtio ki.ki_is_xen_kernel ki.ki_is_debug
 
-let detect_kernels g inspect family bootloader =
+let detect_kernels (g : G.guestfs) inspect family bootloader =
   (* What kernel/kernel-like packages are installed on the current guest? *)
   let installed_kernels : kernel_info list =
     let rex_ko = Str.regexp ".*\\.k?o\\(\\.xz\\)?$" in
+    let check_config feature = function
+      | None -> false
+      | Some config ->
+        let prefix = "^CONFIG_" ^ String.uppercase_ascii feature ^ "=" in
+        let lines = g#grep ~extended:true prefix config in
+        let lines = Array.to_list lines in
+        match lines with
+        | [] -> false
+        | line :: _ ->
+          let kind = snd (String.split "=" line) in
+          (match kind with
+          | "m" | "y" -> true
+          | _ -> false
+          )
+    in
     let rex_ko_extract = Str.regexp ".*/\\([^/]+\\)\\.k?o\\(\\.xz\\)?$" in
     let rex_initrd =
       if family = `Debian_family then
@@ -156,7 +173,15 @@ let detect_kernels g inspect family bootloader =
              ) modules in
              assert (List.length modules > 0);
 
-             let supports_virtio = List.mem "virtio_net" modules in
+             let config_file =
+               let cfg = "/boot/config-" ^ version in
+               if List.mem cfg files then Some cfg
+               else None in
+
+             let kernel_supports what kconf =
+               List.mem what modules || check_config kconf config_file in
+
+             let supports_virtio = kernel_supports "virtio_net" "VIRTIO_NET" in
              let is_xen_kernel = List.mem "xennet" modules in
 
              (* If the package name is like "kernel-debug", then it's
@@ -179,6 +204,7 @@ let detect_kernels g inspect family bootloader =
                ki_supports_virtio = supports_virtio;
                ki_is_xen_kernel = is_xen_kernel;
                ki_is_debug = is_debug;
+               ki_config_file = config_file;
              }
            )
 
