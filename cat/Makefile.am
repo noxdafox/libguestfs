@@ -1,4 +1,4 @@
-# libguestfs virt-cat, virt-filesystems, virt-log and virt-ls.
+# libguestfs virt-cat, virt-filesystems, virt-log, virt-ls and virt-tail.
 # Copyright (C) 2010-2016 Red Hat Inc.
 #
 # This program is free software; you can redistribute it and/or modify
@@ -26,9 +26,11 @@ EXTRA_DIST = \
 	test-virt-log.sh \
 	virt-log.pod \
 	test-virt-ls.sh \
-	virt-ls.pod
+	virt-ls.pod \
+	test-virt-tail.sh \
+	virt-tail.pod
 
-bin_PROGRAMS = virt-cat virt-filesystems virt-log virt-ls
+bin_PROGRAMS = virt-cat virt-filesystems virt-log virt-ls virt-tail
 
 SHARED_SOURCE_FILES = \
 	../fish/windows.h \
@@ -132,14 +134,39 @@ virt_ls_LDADD = \
 	$(LTLIBINTL) \
 	../gnulib/lib/libgnu.la
 
+virt_tail_SOURCES = \
+	$(SHARED_SOURCE_FILES) \
+	tail.c
+
+virt_tail_CPPFLAGS = \
+	-DGUESTFS_WARN_DEPRECATED=1 \
+	-DLOCALEBASEDIR=\""$(datadir)/locale"\" \
+	-I$(top_srcdir)/src -I$(top_builddir)/src \
+	-I$(top_srcdir)/fish \
+	-I$(srcdir)/../gnulib/lib -I../gnulib/lib
+
+virt_tail_CFLAGS = \
+	$(WARN_CFLAGS) $(WERROR_CFLAGS) \
+	$(LIBXML2_CFLAGS)
+
+virt_tail_LDADD = \
+	$(top_builddir)/src/libutils.la \
+	$(top_builddir)/src/libguestfs.la \
+	$(top_builddir)/fish/libfishcommon.la \
+	$(LIBXML2_LIBS) \
+	$(LIBVIRT_LIBS) \
+	$(LTLIBINTL) \
+	../gnulib/lib/libgnu.la
+
 # Manual pages and HTML files for the website.
-man_MANS = virt-cat.1 virt-filesystems.1 virt-log.1 virt-ls.1
+man_MANS = virt-cat.1 virt-filesystems.1 virt-log.1 virt-ls.1 virt-tail.1
 
 noinst_DATA = \
 	$(top_builddir)/website/virt-cat.1.html \
 	$(top_builddir)/website/virt-filesystems.1.html \
 	$(top_builddir)/website/virt-log.1.html \
-	$(top_builddir)/website/virt-ls.1.html
+	$(top_builddir)/website/virt-ls.1.html \
+	$(top_builddir)/website/virt-tail.1.html
 
 virt-cat.1 $(top_builddir)/website/virt-cat.1.html: stamp-virt-cat.pod
 
@@ -185,6 +212,17 @@ stamp-virt-ls.pod: virt-ls.pod
 	  $<
 	touch $@
 
+virt-tail.1 $(top_builddir)/website/virt-tail.1.html: stamp-virt-tail.pod
+
+stamp-virt-tail.pod: virt-tail.pod
+	$(PODWRAPPER) \
+	  --man virt-tail.1 \
+	  --html $(top_builddir)/website/virt-tail.1.html \
+	  --license GPLv2+ \
+	  --warning safe \
+	  $<
+	touch $@
+
 # Tests.
 
 TESTS_ENVIRONMENT = $(top_builddir)/run --test
@@ -197,11 +235,12 @@ TESTS += \
 	test-virt-cat.sh \
 	test-virt-filesystems.sh \
 	test-virt-log.sh \
-	test-virt-ls.sh
+	test-virt-ls.sh \
+	test-virt-tail.sh
 endif ENABLE_APPLIANCE
 
 check-valgrind:
-	$(MAKE) VG="$(top_builddir)/run @VG@" check
+	$(MAKE) VG="@VG@" check
 
 check-valgrind-local-guests:
 	for g in $(GUESTS); do \

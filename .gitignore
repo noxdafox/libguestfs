@@ -69,6 +69,7 @@ Makefile.in
 /bash/virt-resize
 /bash/virt-sysprep
 /bash/virt-sparsify
+/bash/virt-tail
 /bash/virt-tar-in
 /bash/virt-tar-out
 /build-aux/.gitignore
@@ -94,6 +95,7 @@ Makefile.in
 /builder/stamp-virt-builder.pod
 /builder/stamp-virt-index-validate.pod
 /builder/test-config/virt-builder/repos.d/test-index.conf
+/builder/test-console-*.sh
 /builder/test-simplestreams/virt-builder/repos.d/cirros.conf
 /builder/test-website/virt-builder/repos.d/libguestfs.conf
 /builder/virt-builder
@@ -111,6 +113,8 @@ Makefile.in
 /cat/virt-log.1
 /cat/virt-ls
 /cat/virt-ls.1
+/cat/virt-tail
+/cat/virt-tail.1
 /ChangeLog
 /compile
 /config.cache
@@ -129,6 +133,7 @@ Makefile.in
 /customize/customize-synopsis.pod
 /customize/stamp-virt-customize.pod
 /customize/test-firstboot-*.sh
+/customize/test-password-*.sh
 /customize/test-settings-*.sh
 /customize/virt-customize
 /customize/virt-customize.1
@@ -347,7 +352,6 @@ Makefile.in
 /p2v/dependencies.debian
 /p2v/dependencies.redhat
 /p2v/dependencies.suse
-/p2v/launch-virt-p2v
 /p2v/stamp-test-virt-p2v-pxe-data-files
 /p2v/stamp-test-virt-p2v-pxe-hostkey
 /p2v/stamp-test-virt-p2v-pxe-kernel
@@ -375,6 +379,7 @@ Makefile.in
 /p2v/virt-p2v-make-kickstart.1
 /p2v/virt-p2v-make-kiwi
 /p2v/virt-p2v-make-kiwi.1
+/p2v/virt-p2v.xz
 /perl/_build
 /perl/bindtests.pl
 /perl/blib

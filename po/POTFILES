@@ -11,10 +11,12 @@ cat/cat.c
 cat/filesystems.c
 cat/log.c
 cat/ls.c
+cat/tail.c
 cat/visit.c
 customize/crypt-c.c
 customize/dummy.c
 customize/perl_edit-c.c
+customize/test-password.pl
 daemon/9p.c
 daemon/acl.c
 daemon/augeas.c
@@ -331,6 +333,7 @@ p2v/about-license.c
 p2v/config.c
 p2v/conversion.c
 p2v/gui.c
+p2v/inhibit.c
 p2v/kernel-cmdline.c
 p2v/kernel.c
 p2v/main.c
