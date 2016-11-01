@@ -469,6 +469,15 @@ let structs = [
     ];
     s_camel_name = "TSKDirent" };
 
+  (* Yara detection information. *)
+  { defaults with
+    s_name = "yara_detection";
+    s_cols = [
+    "name", FString;
+    "rule", FString;
+    ];
+    s_camel_name = "YaraDetection" };
+
 ] (* end of structs *)
 
 let lookup_struct name =

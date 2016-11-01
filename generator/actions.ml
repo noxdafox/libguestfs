@@ -13338,6 +13338,16 @@ but belonging to different files." };
     shortdesc = "destroy previously loaded yara rules";
     longdesc = "\
 Destroy previously loaded Yara rules in order to free libguestfs resources." };
+
+  { defaults with
+    name = "internal_yara_scan"; added = (1, 35, 26);
+    style = RErr, [Pathname "path"; FileOut "filename";], [];
+    proc_nr = Some 474;
+    visibility = VInternal;
+    optional = Some "libyara";
+    shortdesc = "scan a file with the loaded yara rules";
+    longdesc = "Internal function for yara_scan." };
+
 ]
 
 (* Non-API meta-commands available only in guestfish.
