@@ -13309,6 +13309,27 @@ wildcards.
 Please note that this API may fail when used to compress directories
 with large files, such as the resulting squashfs will be over 3GB big." };
 
+  { defaults with
+    name = "yara_load"; added = (1, 35, 26);
+    style = RErr, [FileIn "filename";], [OString "namespace"];
+    proc_nr = Some 472;
+    progress = true; cancellable = true;
+    optional = Some "libyara";
+    shortdesc = "load yara rules within libguestfs";
+    longdesc = "\
+Load a set of Yara rules from F<filename> within libguestfs appliance.
+
+Rules can be in binary format, as when compiled with yarac command, or
+in source code format. In the latter case, the rules will be first
+compiled and then loaded.
+
+Rules in source code format cannot include external files. In such cases,
+it is recommended to compile them first.
+
+Different rules files can be loaded sequentially. The optional parameter
+C<namespace> can be used to distinguish rules with the same identifier
+but belonging to different files." };
+
 ]
 
 (* Non-API meta-commands available only in guestfish.

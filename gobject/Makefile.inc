@@ -111,7 +111,8 @@ guestfs_gobject_headers= \
   include/guestfs-gobject/optargs-umount_local.h \
   include/guestfs-gobject/optargs-xfs_admin.h \
   include/guestfs-gobject/optargs-xfs_growfs.h \
-  include/guestfs-gobject/optargs-xfs_repair.h
+  include/guestfs-gobject/optargs-xfs_repair.h \
+  include/guestfs-gobject/optargs-yara_load.h
 
 guestfs_gobject_sources= \
   src/session.c \
@@ -203,4 +204,5 @@ guestfs_gobject_sources= \
   src/optargs-umount_local.c \
   src/optargs-xfs_admin.c \
   src/optargs-xfs_growfs.c \
-  src/optargs-xfs_repair.c
+  src/optargs-xfs_repair.c \
+  src/optargs-yara_load.c

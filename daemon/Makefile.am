@@ -164,6 +164,7 @@ guestfsd_SOURCES = \
 	wc.c \
 	xattr.c \
 	xfs.c \
+	yara.c \
 	zero.c \
 	zerofree.c
 
