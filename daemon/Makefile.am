@@ -186,7 +186,8 @@ guestfsd_LDADD = \
 	$(LIBINTL) \
 	$(SERVENT_LIB) \
 	$(PCRE_LIBS) \
-	$(TSK_LIBS)
+	$(TSK_LIBS) \
+	$(YARA_LIBS)
 
 guestfsd_CPPFLAGS = \
 	-I$(top_srcdir)/gnulib/lib \
