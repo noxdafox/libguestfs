@@ -13330,6 +13330,14 @@ Different rules files can be loaded sequentially. The optional parameter
 C<namespace> can be used to distinguish rules with the same identifier
 but belonging to different files." };
 
+  { defaults with
+    name = "yara_destroy"; added = (1, 35, 26);
+    style = RErr, [], [];
+    proc_nr = Some 473;
+    optional = Some "libyara";
+    shortdesc = "destroy previously loaded yara rules";
+    longdesc = "\
+Destroy previously loaded Yara rules in order to free libguestfs resources." };
 ]
 
 (* Non-API meta-commands available only in guestfish.

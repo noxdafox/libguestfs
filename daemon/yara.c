@@ -105,6 +105,20 @@ do_yara_load (const char *namespace)
   return (ret == ERROR_SUCCESS) ? 0 : -1;
 }
 
+int
+do_yara_destroy (void)
+{
+  if (rules == NULL) {
+    reply_with_error ("no yara rules loaded");
+    return -1;
+  }
+
+  yr_rules_destroy (rules);
+  rules = NULL;
+
+  return 0;
+}
+
 /* Compile source code rules and load them.
  * Return ERROR_SUCCESS on success, Yara error code type on error.
  */
