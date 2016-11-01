@@ -3756,6 +3756,31 @@ Searches all the entries associated with the given inode.
 For each entry, a C<tsk_dirent> structure is returned.
 See C<filesystem_walk> for more information about C<tsk_dirent> structures." };
 
+  { defaults with
+    name = "yara_scan"; added = (1, 35, 26);
+    style = RStructList ("detections", "yara_detection"), [Pathname "path";], [];
+    optional = Some "libyara";
+    progress = true; cancellable = true;
+    shortdesc = "scan a file with the loaded yara rules";
+    longdesc = "\
+Scan a file with the previously loaded Yara rules.
+
+For each matching rule, a C<yara_detection> structure is returned.
+
+The C<tsk_dirent> structure contains the following fields.
+
+=over 4
+
+=item 'name'
+
+Path of the file matching a Yara rule.
+
+=item 'rule'
+
+Identifier of the Yara rule which matched against the given file.
+
+=back" };
+
 ]
 
 (* daemon_functions are any functions which cause some action
