@@ -54,60 +54,68 @@ write_cb (void *data_vp, const void *buf, size_t len)
   return 0;
 }
 
+int
+upload_to_fd (int fd)
+{
+  int ret = 0, err = 0;
+  struct write_cb_data data = { .fd = fd, .written = 0 };
+
+  ret = receive_file (write_cb, &data);
+  if (ret == -1) {		/* write error */
+    err = errno;
+    ret = cancel_receive ();
+    errno = err;
+    reply_with_error ("write error");
+    close (fd);
+    return -1;
+  }
+  if (ret == -2) {		/* cancellation from library */
+    /* This error is ignored by the library since it initiated the
+     * cancel.  Nevertheless we must send an error reply here.
+     */
+    reply_with_error ("file upload cancelled");
+    close (fd);
+    return -1;
+  }
+
+  if (close (fd) == -1) {
+    reply_with_perror ("close");
+    return -1;
+  }
+
+  return 0;
+}
+
 /* Has one FileIn parameter. */
 static int
 upload (const char *filename, int flags, int64_t offset)
 {
-  struct write_cb_data data = { .written = 0 };
-  int err, r, is_dev;
+  int err, is_dev, fd;
 
   is_dev = STRPREFIX (filename, "/dev/");
 
   if (!is_dev) CHROOT_IN;
-  data.fd = open (filename, flags, 0666);
+  fd = open (filename, flags, 0666);
   if (!is_dev) CHROOT_OUT;
-  if (data.fd == -1) {
+  if (fd == -1) {
     err = errno;
-    r = cancel_receive ();
+    cancel_receive ();
     errno = err;
     reply_with_perror ("%s", filename);
     return -1;
   }
 
   if (offset) {
-    if (lseek (data.fd, offset, SEEK_SET) == -1) {
+    if (lseek (fd, offset, SEEK_SET) == -1) {
       err = errno;
-      r = cancel_receive ();
+      cancel_receive ();
       errno = err;
       reply_with_perror ("lseek: %s", filename);
       return -1;
     }
   }
 
-  r = receive_file (write_cb, &data);
-  if (r == -1) {		/* write error */
-    err = errno;
-    r = cancel_receive ();
-    errno = err;
-    reply_with_error ("write error: %s", filename);
-    close (data.fd);
-    return -1;
-  }
-  if (r == -2) {		/* cancellation from library */
-    /* This error is ignored by the library since it initiated the
-     * cancel.  Nevertheless we must send an error reply here.
-     */
-    reply_with_error ("file upload cancelled");
-    close (data.fd);
-    return -1;
-  }
-
-  if (close (data.fd) == -1) {
-    reply_with_perror ("close: %s", filename);
-    return -1;
-  }
-
-  return 0;
+  return upload_to_fd (fd);
 }
 
 /* Has one FileIn parameter. */
