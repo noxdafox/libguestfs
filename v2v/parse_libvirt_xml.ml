@@ -50,7 +50,7 @@ let parse_libvirt_xml ?conn xml =
   let xpathctx = Xml.xpath_new_context doc in
   let xpath_string = xpath_string xpathctx
   and xpath_int = xpath_int xpathctx
-  and xpath_int_default = xpath_int_default xpathctx
+  (*and xpath_int_default = xpath_int_default xpathctx*)
   and xpath_int64_default = xpath_int64_default xpathctx in
 
   let hypervisor =
@@ -65,7 +65,27 @@ let parse_libvirt_xml ?conn xml =
     | Some s -> s in
   let memory = xpath_int64_default "/domain/memory/text()" (1024L *^ 1024L) in
   let memory = memory *^ 1024L in
-  let vcpu = xpath_int_default "/domain/vcpu/text()" 1 in
+
+  let cpu_vendor = xpath_string "/domain/cpu/vendor/text()" in
+  let cpu_model = xpath_string "/domain/cpu/model/text()" in
+  let cpu_sockets = xpath_int "/domain/cpu/topology/@sockets" in
+  let cpu_cores = xpath_int "/domain/cpu/topology/@cores" in
+  let cpu_threads = xpath_int "/domain/cpu/topology/@threads" in
+
+  (* Get the <vcpu> field from the input XML.  If not set then
+   * try calculating it from the <cpu> <topology> node.  If that's
+   * not set either, then assume 1 vCPU.
+   *)
+  let vcpu = xpath_int "/domain/vcpu/text()" in
+  let vcpu =
+    match vcpu, cpu_sockets, cpu_cores, cpu_threads with
+    | Some vcpu, _,    _,    _    -> vcpu
+    | None,      None, None, None -> 1
+    | None,      _,    _,    _    ->
+       let sockets = match cpu_sockets with None -> 1 | Some v -> v in
+       let cores = match cpu_cores with None -> 1 | Some v -> v in
+       let threads = match cpu_threads with None -> 1 | Some v -> v in
+       sockets * cores * threads in
 
   let features =
     let features = ref [] in
@@ -109,8 +129,8 @@ let parse_libvirt_xml ?conn xml =
             )
           | Some "socket" ->
             (match xpath_string "listen[1]/@socket" with
-            | None -> LNoListen
-            | Some n -> LSocket n
+            | None -> LSocket None
+            | Some n -> LSocket (Some n)
             )
           | Some "none" ->
             LNone
@@ -410,6 +430,11 @@ let parse_libvirt_xml ?conn xml =
     s_name = name; s_orig_name = name;
     s_memory = memory;
     s_vcpu = vcpu;
+    s_cpu_vendor = cpu_vendor;
+    s_cpu_model = cpu_model;
+    s_cpu_sockets = cpu_sockets;
+    s_cpu_cores = cpu_cores;
+    s_cpu_threads = cpu_threads;
     s_features = features;
     s_firmware = UnknownFirmware; (* XXX until RHBZ#1217444 is fixed *)
     s_display = display;
