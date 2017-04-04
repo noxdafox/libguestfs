@@ -77,7 +77,7 @@ static void __attribute__((noreturn))
 usage (int status)
 {
   if (status != EXIT_SUCCESS)
-    fprintf (stderr, _("Try `%s --help' for more information.\n"),
+    fprintf (stderr, _("Try ‘%s --help’ for more information.\n"),
              getprogname ());
   else {
     printf (_("%s: Run a rescue shell on a virtual machine\n"
@@ -101,7 +101,6 @@ usage (int status)
               "  --scratch[=N]        Add scratch disk(s)\n"
               "  --selinux            For backwards compat only, does nothing\n"
               "  --smp N              Enable SMP with N >= 2 virtual CPUs\n"
-              "  --suggest            Suggest mount commands for this guest\n"
               "  -v|--verbose         Verbose messages\n"
               "  -V|--version         Display version and exit\n"
               "  -w|--rw              Mount read-write\n"

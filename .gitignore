@@ -47,6 +47,7 @@ Makefile.in
 /appliance/stamp-libguestfs-make-fixed-appliance.pod
 /appliance/stamp-supermin
 /appliance/supermin.d
+/AUTHORS
 /autom4te.cache
 /bash/guestunmount
 /bash/virt-builder
@@ -73,6 +74,7 @@ Makefile.in
 /bash/virt-tail
 /bash/virt-tar-in
 /bash/virt-tar-out
+/bash/virt-win-reg
 /build-aux/.gitignore
 /build-aux/ar-lib
 /build-aux/compile
@@ -382,6 +384,7 @@ Makefile.in
 /ocaml/stamp-mlguestfs
 /ocaml/t/*.bc
 /ocaml/t/*.opt
+/p2v/about-authors.c
 /p2v/dependencies.archlinux
 /p2v/dependencies.debian
 /p2v/dependencies.redhat

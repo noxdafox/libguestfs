@@ -71,6 +71,15 @@ struct cpu_config {
   bool pae;
 };
 
+struct rtc_config {
+  enum {
+    BASIS_UNKNOWN,              /* RTC could not be read. */
+    BASIS_UTC,                  /* RTC is either UTC or an offset from UTC. */
+    BASIS_LOCALTIME,            /* RTC is localtime. */
+  } basis;
+  int offset;                   /* RTC seconds offset from basis. */
+};
+
 struct config {
   char *server;
   int port;
@@ -84,6 +93,7 @@ struct config {
   int vcpus;
   uint64_t memory;
   struct cpu_config cpu;
+  struct rtc_config rtc;
   char **disks;
   char **removable;
   char **interfaces;
@@ -107,6 +117,9 @@ extern void print_config (struct config *, FILE *);
 /* cpuid.c */
 extern void get_cpu_config (struct cpu_config *);
 
+/* rtc.c */
+extern void get_rtc_config (struct rtc_config *);
+
 /* kernel-cmdline.c */
 extern char **parse_cmdline_string (const char *cmdline);
 extern char **parse_proc_cmdline (void);
@@ -123,6 +136,12 @@ extern void kernel_conversion (struct config *, char **cmdline, int cmdline_sour
 extern void gui_conversion (struct config *);
 
 /* conversion.c */
+struct data_conn {          /* Data per NBD connection / physical disk. */
+  mexp_h *h;                /* miniexpect handle to ssh */
+  pid_t nbd_pid;            /* NBD server PID */
+  int nbd_remote_port;      /* remote NBD port on conversion server */
+};
+
 extern int start_conversion (struct config *, void (*notify_ui) (int type, const char *data));
 #define NOTIFY_LOG_DIR        1  /* location of remote log directory */
 #define NOTIFY_REMOTE_MESSAGE 2  /* log message from remote virt-v2v */
@@ -130,6 +149,9 @@ extern int start_conversion (struct config *, void (*notify_ui) (int type, const
 extern const char *get_conversion_error (void);
 extern void cancel_conversion (void);
 extern int conversion_is_running (void);
+
+/* physical-xml.c */
+extern void generate_physical_xml (struct config *, struct data_conn *, const char *filename);
 
 /* inhibit.c */
 extern int inhibit_power_saving (void);
@@ -139,7 +161,7 @@ extern int test_connection (struct config *);
 extern mexp_h *open_data_connection (struct config *, const char *local_ipaddr, int local_port, int *remote_port);
 extern mexp_h *start_remote_connection (struct config *, const char *remote_dir);
 extern const char *get_ssh_error (void);
-extern int scp_file (struct config *config, const char *localfile, const char *remotefile);
+extern int scp_file (struct config *config, const char *target, const char *local, ...) __attribute__((sentinel));
 
 /* nbd.c */
 extern void set_nbd_option (const char *opt);
@@ -168,8 +190,8 @@ extern char **output_drivers;
 
 /* about-authors.c */
 extern const char *authors[];
-
-/* about-license.c */
-extern const char *gplv2plus;
+extern const char *qa[];
+extern const char *documenters[];
+extern const char *others[];
 
 #endif /* P2V_H */

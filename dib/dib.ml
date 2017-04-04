@@ -74,9 +74,22 @@ let envvars_string l =
 
 let prepare_external ~envvars ~dib_args ~dib_vars ~out_name ~root_label
   ~rootfs_uuid ~image_cache ~arch ~network ~debug ~fs_type ~checksum
-  destdir libdir fakebindir all_elements element_paths =
+  ~python
+  destdir libdir fakebindir loaded_elements all_elements element_paths =
   let network_string = if network then "" else "1" in
   let checksum_string = if checksum then "1" else "" in
+  let elements_paths_yaml =
+    List.map (
+      fun e ->
+        sprintf "%s: %s" e (quote (Hashtbl.find loaded_elements e).directory)
+    ) (StringSet.elements all_elements) in
+  let elements_paths_yaml = String.concat ", " elements_paths_yaml in
+  let elements_paths_array =
+    List.map (
+      fun e ->
+        sprintf "[%s]=%s" e (quote (Hashtbl.find loaded_elements e).directory)
+    ) (StringSet.elements all_elements) in
+  let elements_paths_array = String.concat " " elements_paths_array in
 
   let run_extra = sprintf "\
 #!/bin/bash
@@ -90,6 +103,8 @@ target_dir=$1
 shift
 script=$1
 shift
+
+VIRT_DIB_OURPATH=$(dirname $(realpath $0))
 
 # user variables
 %s
@@ -115,6 +130,10 @@ export TMP_DIR=\"${TMPDIR}\"
 export DIB_DEBUG_TRACE=%d
 export FS_TYPE=%s
 export DIB_CHECKSUM=%s
+export DIB_PYTHON_EXEC=%s
+
+elinfo_out=$(<${VIRT_DIB_OURPATH}/elinfo_out)
+eval \"$elinfo_out\"
 
 ENVIRONMENT_D_DIR=$target_dir/../environment.d
 
@@ -147,8 +166,19 @@ $target_dir/$script
     (quote dib_vars)
     debug
     fs_type
-    checksum_string in
-  write_script (destdir // "run-part-extra.sh") run_extra
+    checksum_string
+    python in
+  write_script (destdir // "run-part-extra.sh") run_extra;
+  let elinfo_out = sprintf "\
+export IMAGE_ELEMENT_YAML=\"{%s}\"
+function get_image_element_array {
+  echo \"%s\"
+};
+export -f get_image_element_array;
+"
+    elements_paths_yaml
+    elements_paths_array in
+  write_script (destdir // "elinfo_out") elinfo_out
 
 let prepare_aux ~envvars ~dib_args ~dib_vars ~log_file ~out_name ~rootfs_uuid
   ~arch ~network ~root_label ~install_type ~debug ~extra_packages ~fs_type
@@ -198,6 +228,7 @@ export TMP_HOOKS_PATH=$mysysroot/tmp/in_target.aux/hooks
 export DIB_ARGS=\"%s\"
 export DIB_MANIFEST_SAVE_DIR=\"$mysysroot/tmp/in_target.aux/out/${IMAGE_NAME}.d\"
 export IMAGE_BLOCK_DEVICE=$blockdev
+export IMAGE_BLOCK_DEVICE_WITHOUT_PART=$(echo ${IMAGE_BLOCK_DEVICE} | sed -e \"s|^\\(.*loop[0-9]*\\)p[0-9]*$|\\1|g\")
 export IMAGE_ELEMENT=\"%s\"
 export DIB_ENV=%s
 export DIB_DEBUG_TRACE=%d
@@ -504,6 +535,10 @@ let main () =
     error (f_"the specified base path is not the diskimage-builder library");
 
   (* Check for required tools. *)
+  let python =
+    match cmdline.python with
+    | None -> get_required_tool "python"
+    | Some exe -> exe in
   require_tool "uuidgen";
   Output_format.check_formats_prerequisites cmdline.formats;
   if cmdline.checksum then
@@ -634,9 +669,10 @@ let main () =
                    ~network:cmdline.network ~debug
                    ~fs_type:cmdline.fs_type
                    ~checksum:cmdline.checksum
+                   ~python
                    tmpdir cmdline.basepath
                    (auxtmpdir // "fake-bin")
-                   all_elements cmdline.element_paths;
+                   loaded_elements all_elements cmdline.element_paths;
 
   let run_hook ~blockdev ~sysroot ?(new_wd = "") (g : Guestfs.guestfs) hook =
     try

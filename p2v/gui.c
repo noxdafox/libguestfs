@@ -134,6 +134,24 @@ static GtkWidget *run_dlg,
 /* Colour tags used in the v2v_output GtkTextBuffer. */
 static GtkTextTag *v2v_output_tags[16];
 
+#if !GTK_CHECK_VERSION(3,0,0)   /* gtk < 3 */
+/* The license of virt-p2v, for the About dialog. */
+static const char gplv2plus[] =
+  "This program is free software; you can redistribute it and/or modify\n"
+  "it under the terms of the GNU General Public License as published by\n"
+  "the Free Software Foundation; either version 2 of the License, or\n"
+  "(at your option) any later version.\n"
+  "\n"
+  "This program is distributed in the hope that it will be useful,\n"
+  "but WITHOUT ANY WARRANTY; without even the implied warranty of\n"
+  "MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\n"
+  "GNU General Public License for more details.\n"
+  "\n"
+  "You should have received a copy of the GNU General Public License\n"
+  "along with this program; if not, write to the Free Software\n"
+  "Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.\n";
+#endif
+
 /**
  * The entry point from the main program.
  *
@@ -612,16 +630,45 @@ xterm_button_clicked (GtkWidget *w, gpointer data)
 static void
 about_button_clicked (GtkWidget *w, gpointer data)
 {
-  gtk_show_about_dialog (GTK_WINDOW (conn_dlg),
-                         "program-name", getprogname (),
-                         "version", PACKAGE_VERSION_FULL " (" host_cpu ")",
-                         "copyright", "\u00A9 2009-2017 Red Hat Inc.",
-                         "comments",
-                           _("Virtualize a physical machine to run on KVM"),
-                         "license", gplv2plus,
-                         "website", "http://libguestfs.org/",
-                         "authors", authors,
-                         NULL);
+  GtkWidget *dialog;
+  GtkWidget *parent = conn_dlg;
+
+  dialog = gtk_about_dialog_new ();
+
+  g_object_set (G_OBJECT (dialog),
+                "program-name", getprogname (),
+                "version", PACKAGE_VERSION_FULL " (" host_cpu ")",
+                "copyright", "\u00A9 2009-2017 Red Hat Inc.",
+                "comments",
+                  _("Virtualize a physical machine to run on KVM"),
+#if GTK_CHECK_VERSION(3,0,0)   /* gtk >= 3 */
+                "license-type", GTK_LICENSE_GPL_2_0,
+#else
+                "license", gplv2plus,
+#endif
+                "website", "http://libguestfs.org/",
+                "authors", authors,
+                NULL);
+
+  if (documenters[0] != NULL)
+    g_object_set (G_OBJECT (dialog),
+                  "documenters", documenters,
+                  NULL);
+
+  if (qa[0] != NULL)
+    gtk_about_dialog_add_credit_section (GTK_ABOUT_DIALOG (dialog),
+                                         "Quality assurance", qa);
+
+  if (others[0] != NULL)
+    gtk_about_dialog_add_credit_section (GTK_ABOUT_DIALOG (dialog),
+                                         "Libguestfs development", others);
+
+  gtk_window_set_modal (GTK_WINDOW (dialog), TRUE);
+  gtk_window_set_transient_for (GTK_WINDOW (dialog), GTK_WINDOW (parent));
+  gtk_window_set_destroy_with_parent (GTK_WINDOW (dialog), TRUE);
+
+  gtk_dialog_run (GTK_DIALOG (dialog));
+  gtk_widget_destroy (dialog);
 }
 
 /**
@@ -785,7 +832,7 @@ create_conversion_dialog (struct config *config)
   table_attach (output_tbl, o_combo,
                 1, 2, 0, 1, GTK_FILL, GTK_FILL, 1, 1);
 
-  oc_label = gtk_label_new_with_mnemonic (_("Output _conn. (-oc):"));
+  oc_label = gtk_label_new_with_mnemonic (_("_Output conn. (-oc):"));
   table_attach (output_tbl, oc_label,
                 0, 1, 1, 2, GTK_FILL, GTK_FILL, 1, 1);
   set_alignment (oc_label, 1., 0.5);
@@ -908,7 +955,7 @@ create_conversion_dialog (struct config *config)
   /* Buttons. */
   gtk_dialog_add_buttons (GTK_DIALOG (conv_dlg),
                           _("_Back"), 1,
-                          _("_Start conversion"), 2,
+                          _("Start _conversion"), 2,
                           NULL);
   back = gtk_dialog_get_widget_for_response (GTK_DIALOG (conv_dlg), 1);
   start_button = gtk_dialog_get_widget_for_response (GTK_DIALOG (conv_dlg), 2);

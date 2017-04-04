@@ -66,6 +66,10 @@ copy_config (struct config *old)
     c->identity_file = strdup (c->identity_file);
   if (c->guestname)
     c->guestname = strdup (c->guestname);
+  if (c->cpu.vendor)
+    c->cpu.vendor = strdup (c->cpu.vendor);
+  if (c->cpu.model)
+    c->cpu.model = strdup (c->cpu.model);
   if (c->disks)
     c->disks = guestfs_int_copy_string_list (c->disks);
   if (c->removable)
@@ -148,6 +152,19 @@ print_config (struct config *config, FILE *fp)
            config->cpu.acpi ? " acpi" : "",
            config->cpu.apic ? " apic" : "",
            config->cpu.pae  ? " pae"  : "");
+  fprintf (fp, "rtc offset . . .   ");
+  switch (config->rtc.basis) {
+  case BASIS_UNKNOWN:
+    fprintf (fp, "unknown");
+    break;
+  case BASIS_UTC:
+    fprintf (fp, "%d seconds from UTC", config->rtc.offset);
+    break;
+  case BASIS_LOCALTIME:
+    fprintf (fp, "%d seconds from localtime", config->rtc.offset);
+    break;
+  }
+  fprintf (fp, "\n");
   fprintf (fp, "disks  . . . . .  ");
   if (config->disks != NULL) {
     for (i = 0; config->disks[i] != NULL; ++i)
