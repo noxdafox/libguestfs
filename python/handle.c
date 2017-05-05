@@ -337,19 +337,27 @@ guestfs_int_py_get_string_list (PyObject *obj)
 PyObject *
 guestfs_int_py_put_string_list (char * const * const argv)
 {
-  PyObject *list;
+  PyObject *list, *item;
   size_t argc, i;
 
   for (argc = 0; argv[argc] != NULL; ++argc)
     ;
 
   list = PyList_New (argc);
+  if (list == NULL)
+    return NULL;
   for (i = 0; i < argc; ++i) {
 #ifdef HAVE_PYSTRING_ASSTRING
-    PyList_SetItem (list, i, PyString_FromString (argv[i]));
+    item = PyString_FromString (argv[i]);
 #else
-    PyList_SetItem (list, i, PyUnicode_FromString (argv[i]));
+    item = PyUnicode_FromString (argv[i]);
 #endif
+    if (item == NULL) {
+      Py_CLEAR (list);
+      return NULL;
+    }
+
+    PyList_SetItem (list, i, item);
   }
 
   return list;
@@ -358,24 +366,44 @@ guestfs_int_py_put_string_list (char * const * const argv)
 PyObject *
 guestfs_int_py_put_table (char * const * const argv)
 {
-  PyObject *list, *item;
+  PyObject *list, *tuple, *item;
   size_t argc, i;
 
   for (argc = 0; argv[argc] != NULL; ++argc)
     ;
 
   list = PyList_New (argc >> 1);
+  if (list == NULL)
+    return NULL;
   for (i = 0; i < argc; i += 2) {
-    item = PyTuple_New (2);
+    tuple = PyTuple_New (2);
+    if (tuple == NULL)
+      goto err;
 #ifdef HAVE_PYSTRING_ASSTRING
-    PyTuple_SetItem (item, 0, PyString_FromString (argv[i]));
-    PyTuple_SetItem (item, 1, PyString_FromString (argv[i+1]));
+    item = PyString_FromString (argv[i]);
+    if (item == NULL)
+      goto err;
+    PyTuple_SetItem (tuple, 0, item);
+    item = PyString_FromString (argv[i+1]);
+    if (item == NULL)
+      goto err;
+    PyTuple_SetItem (tuple, 1, item);
 #else
-    PyTuple_SetItem (item, 0, PyUnicode_FromString (argv[i]));
-    PyTuple_SetItem (item, 1, PyUnicode_FromString (argv[i+1]));
+    item = PyUnicode_FromString (argv[i]);
+    if (item == NULL)
+      goto err;
+    PyTuple_SetItem (tuple, 0, item);
+    item = PyUnicode_FromString (argv[i+1]);
+    if (item == NULL)
+      goto err;
+    PyTuple_SetItem (tuple, 1, item);
 #endif
-    PyList_SetItem (list, i >> 1, item);
+    PyList_SetItem (list, i >> 1, tuple);
   }
 
   return list;
+ err:
+  Py_CLEAR (list);
+  Py_CLEAR (tuple);
+  return NULL;
 }
